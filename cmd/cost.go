@@ -177,7 +177,9 @@ var costResetCmd = &cobra.Command{
 		fmt.Print("Are you sure? Type 'yes' to confirm: ")
 
 		var response string
-		fmt.Scanln(&response)
+		if _, err := fmt.Scanln(&response); err != nil {
+			return fmt.Errorf("failed to read response: %w", err)
+		}
 
 		if strings.ToLower(response) != "yes" {
 			fmt.Println("Aborted.")

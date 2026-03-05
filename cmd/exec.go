@@ -207,7 +207,9 @@ func runExecRun(command string) error {
 	}
 
 	if execIntent != "" {
-		db.Exec(`UPDATE reversible_actions SET attestation_id = ? WHERE id = ?`, execIntent, actionID)
+		if _, err := db.Exec(`UPDATE reversible_actions SET attestation_id = ? WHERE id = ?`, execIntent, actionID); err != nil {
+			fmt.Printf("Warning: failed to link intent to action: %v\n", err)
+		}
 	}
 
 	return nil
@@ -258,10 +260,12 @@ func runExecRollback(id string) error {
 		}
 	}
 
-	db.Exec(
+	if _, err := db.Exec(
 		`UPDATE reversible_actions SET status = ?, rolled_back_at = ? WHERE id = ?`,
 		exec.StatusRolledBack, time.Now().UTC().Format(time.RFC3339), id,
-	)
+	); err != nil {
+		fmt.Printf("Warning: failed to update action status in database: %v\n", err)
+	}
 
 	fmt.Printf("✓ Rolled back: %s\n", command)
 	fmt.Printf("  Action ID: %s\n", id)
@@ -337,24 +341,4 @@ func generateActionID(command string) string {
 	return fmt.Sprintf("exec:%x", hash[:8])
 }
 
-func containsDangerousPatterns(command string) bool {
-	dangerous := []string{
-		"rm -rf", "rm /", "del /", "format ",
-		"> /dev/null", "> /dev/null 2>&1",
-		"curl | sh", "wget | sh",
-	}
-	for _, d := range dangerous {
-		if strings.Contains(command, d) {
-			return true
-		}
-	}
-	return false
-}
-
-func confirmDangerous(command string) bool {
-	fmt.Printf("⚠️  Potentially dangerous command: %s\n", command)
-	fmt.Print("Continue? (type 'yes' to confirm): ")
-	var response string
-	fmt.Scanln(&response)
-	return response == "yes"
-}
+// containsDangerousPatterns and confirmDangerous are now handled by the guardrails package

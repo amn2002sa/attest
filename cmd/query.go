@@ -98,9 +98,12 @@ var queryProvenanceCmd = &cobra.Command{
 
 		fmt.Printf("Provenance for %s:\n", intentID)
 		for rows.Next() {
-			var id, typ, target, ts, sig string
-			rows.Scan(&id, &typ, &target, &ts, &sig)
-			fmt.Printf("  %s | %s %s (%s)\n    Sig: %s...\n", ts, typ, target, id[:8], sig[:16])
+			var id, goal, target, ts, sig string
+			if err := rows.Scan(&id, &goal, &target, &ts, &sig); err != nil {
+				fmt.Printf("Warning: failed to scan attestation: %v\n", err)
+				continue
+			}
+			fmt.Printf("  %s | %s %s (%s)\n    Sig: %s...\n", ts, goal, target, id[:8], sig[:16])
 		}
 		return nil
 	},

@@ -313,7 +313,10 @@ func (m *Middleware) BudgetEnforcingRoundTripper(runID string) http.RoundTripper
 // generateRunID creates a unique run identifier
 func generateRunID() string {
 	b := make([]byte, 8)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to timestamp if entropy fails
+		return fmt.Sprintf("%x", time.Now().UnixNano())
+	}
 	return hex.EncodeToString(b)
 }
 

@@ -253,7 +253,9 @@ func (i *Interceptor) confirmOperation(result *PolicyResult, op *Operation) bool
 	fmt.Printf("Type %s to confirm: ", red("'DESTROY'"))
 
 	var input string
-	fmt.Scanln(&input)
+	if _, err := fmt.Scanln(&input); err != nil {
+		return false
+	}
 
 	return input == "DESTROY"
 }

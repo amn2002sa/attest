@@ -52,13 +52,19 @@ func (s *IntentStore) GetIntent(id string) (*intent.Intent, error) {
 	var crit []string
 	var meta intent.IntentMeta
 	if constraints.Valid && constraints.String != "" {
-		json.Unmarshal([]byte(constraints.String), &cons)
+		if err := json.Unmarshal([]byte(constraints.String), &cons); err != nil {
+			fmt.Printf("Warning: failed to unmarshal constraints: %v\n", err)
+		}
 	}
 	if criteria.Valid && criteria.String != "" {
-		json.Unmarshal([]byte(criteria.String), &crit)
+		if err := json.Unmarshal([]byte(criteria.String), &crit); err != nil {
+			fmt.Printf("Warning: failed to unmarshal criteria: %v\n", err)
+		}
 	}
 	if metadata.Valid && metadata.String != "" {
-		json.Unmarshal([]byte(metadata.String), &meta)
+		if err := json.Unmarshal([]byte(metadata.String), &meta); err != nil {
+			fmt.Printf("Warning: failed to unmarshal metadata: %v\n", err)
+		}
 	}
 
 	created, _ := time.Parse(time.RFC3339, createdAt.String)
@@ -109,13 +115,19 @@ func (s *IntentStore) ListIntents(statusFilter string) ([]*intent.Intent, error)
 		var crit []string
 		var meta intent.IntentMeta
 		if constraints.Valid && constraints.String != "" {
-			json.Unmarshal([]byte(constraints.String), &cons)
+			if err := json.Unmarshal([]byte(constraints.String), &cons); err != nil {
+				fmt.Printf("Warning: failed to unmarshal constraints: %v\n", err)
+			}
 		}
 		if criteria.Valid && criteria.String != "" {
-			json.Unmarshal([]byte(criteria.String), &crit)
+			if err := json.Unmarshal([]byte(criteria.String), &crit); err != nil {
+				fmt.Printf("Warning: failed to unmarshal criteria: %v\n", err)
+			}
 		}
 		if metadata.Valid && metadata.String != "" {
-			json.Unmarshal([]byte(metadata.String), &meta)
+			if err := json.Unmarshal([]byte(metadata.String), &meta); err != nil {
+				fmt.Printf("Warning: failed to unmarshal metadata: %v\n", err)
+			}
 		}
 
 		created, _ := time.Parse(time.RFC3339, createdAt.String)
@@ -152,7 +164,9 @@ func (s *IntentStore) GetIntentByTicket(ticketID string) (*intent.Intent, error)
 
 	var id string
 	if rows.Next() {
-		rows.Scan(&id)
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("failed to scan intent id: %w", err)
+		}
 	}
 	if id == "" {
 		return nil, fmt.Errorf("intent not found for ticket: %s", ticketID)

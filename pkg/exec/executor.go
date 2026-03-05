@@ -3,7 +3,7 @@ package exec
 import (
 	"crypto/sha256"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -105,12 +105,12 @@ func (m *BackupManager) CreateBackup(target string, backupType BackupType) (stri
 
 // backupFile creates a backup of a single file
 func (m *BackupManager) backupFile(target, backupPath string) (string, error) {
-	data, err := ioutil.ReadFile(target)
+	data, err := os.ReadFile(target)
 	if err != nil {
 		return "", fmt.Errorf("failed to read file: %w", err)
 	}
 
-	if err := ioutil.WriteFile(backupPath, data, 0644); err != nil {
+	if err := os.WriteFile(backupPath, data, 0644); err != nil {
 		return "", fmt.Errorf("failed to write backup: %w", err)
 	}
 
@@ -312,7 +312,9 @@ func (e *Executor) Execute(opts ExecuteOptions) *ExecuteResult {
 	if err != nil {
 		// Command failed - try to restore backup
 		if backupPath != "" {
-			e.backupManager.RestoreBackup(backupPath, opts.WorkingDir)
+			if rErr := e.backupManager.RestoreBackup(backupPath, opts.WorkingDir); rErr != nil {
+				fmt.Printf("Warning: failed to restore backup after command failure: %v\n", rErr)
+			}
 		}
 		return &ExecuteResult{
 			Success:        false,
@@ -381,11 +383,11 @@ func copyDir(src, dst string) error {
 }
 
 func copyFile(src, dst string) error {
-	data, err := ioutil.ReadFile(src)
+	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(dst, data, 0644)
+	return os.WriteFile(dst, data, 0644)
 }
 
 func isSQLite(path string) bool {

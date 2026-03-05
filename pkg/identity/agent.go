@@ -193,8 +193,9 @@ func (s *AgentStore) ListAll(includeRevoked bool) ([]*Agent, error) {
 			return nil, err
 		}
 
-		var meta AgentMeta
-		json.Unmarshal([]byte(metadata), &meta)
+		if err := json.Unmarshal([]byte(metadata), &meta); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+		}
 		parsedTime, _ := time.Parse(time.RFC3339, createdAt)
 
 		agent := &Agent{
@@ -227,18 +228,17 @@ func (s *AgentStore) Revoke(id string) error {
 		return fmt.Errorf("failed to revoke agent: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
 	if rows == 0 {
 		return fmt.Errorf("agent not found or already revoked")
 	}
 	return nil
 }
 
-// GenerateAgentID generates a unique agent ID
-func GenerateAgentID(publicKey []byte) string {
-	hash := sha256.Sum256(publicKey)
-	return fmt.Sprintf("aid:%x", hash[:8])
-}
+// generateAgentID is now handled by the exported GenerateAgentID
 
 // ParseAgentID parses an agent ID and returns the prefix
 func ParseAgentID(id string) (prefix string, hash string, valid bool) {

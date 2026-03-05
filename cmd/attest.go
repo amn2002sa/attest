@@ -21,7 +21,6 @@ var (
 	attestAction  string
 	attestTarget  string
 	attestInput   string
-	attestOutput  string
 	attestSession string
 	attestFormat  string
 )
@@ -223,7 +222,10 @@ func runAttestCreate() error {
 	}
 
 	if attestFormat == "json" {
-		output, _ := json.MarshalIndent(attest, "", "  ")
+		output, err := json.MarshalIndent(attest, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON: %w", err)
+		}
 		fmt.Println(string(output))
 	} else {
 		fmt.Printf("Attestation created successfully!\n")
@@ -431,25 +433,21 @@ func runAttestImport(path string) error {
 	return nil
 }
 
+func confirmRollback() (bool, error) {
+	fmt.Print("Type 'ROLLBACK' to confirm: ")
+	var input string
+	if _, err := fmt.Scanln(&input); err != nil {
+		return false, nil
+	}
+	return input == "ROLLBACK", nil
+}
+
 func getActionClassification(actionType, target string) string {
 	dangerous := []string{"rm", "delete", "drop", "truncate", "destroy"}
 	for _, d := range dangerous {
-		if contains(target, d) {
+		if strings.Contains(strings.ToLower(target), d) {
 			return "dangerous"
 		}
 	}
 	return "normal"
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
-}
-
-func containsHelper(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

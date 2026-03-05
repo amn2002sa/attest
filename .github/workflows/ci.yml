@@ -35,7 +35,7 @@ jobs:
       run: go mod download
 
     - name: Build
-      run: go build -o attest ./cmd/attest
+      run: go build -v -o attest ./cmd/attest
 
     - name: Run tests
       run: go test -v -race -coverprofile=coverage.txt ./...

@@ -131,7 +131,9 @@ func NewGuardrailsManager() *GuardrailsManager {
 // NewGuardrailsManagerWithConfig creates a new guardrails manager with custom configuration
 func NewGuardrailsManagerWithConfig(config *GuardrailsConfig) *GuardrailsManager {
 	// Ensure storage directory exists
-	os.MkdirAll(config.StorageDir, 0755)
+	if err := os.MkdirAll(config.StorageDir, 0755); err != nil {
+		fmt.Printf("Warning: failed to create storage directory: %v\n", err)
+	}
 
 	// Create checkpoint manager
 	checkpointManager := NewCheckpointManager(config.StorageDir)

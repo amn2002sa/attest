@@ -405,7 +405,4 @@ func runAgentImport(path string) error {
 	return nil
 }
 
-func generateAgentID(publicKey []byte) string {
-	hash := sha256.Sum256(publicKey)
-	return fmt.Sprintf("aid:%x", hash[:8])
-}
+// generateAgentID is now handled by the exported GenerateAgentID

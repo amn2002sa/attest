@@ -79,7 +79,7 @@ Example:
 			delete(currentFiles, cpFile.Path)
 		}
 
-		for path, _ := range currentFiles {
+		for path := range currentFiles {
 			added++
 			fmt.Printf("%s Added: %s\n", green("+"), path)
 		}
@@ -299,7 +299,7 @@ type FileState struct {
 }
 
 func scanCurrentDirectory(root string, files map[string]FileState) {
-	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	if err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -331,7 +331,9 @@ func scanCurrentDirectory(root string, files map[string]FileState) {
 		}
 
 		return nil
-	})
+	}); err != nil {
+		fmt.Printf("Warning: error during directory scan: %v\n", err)
+	}
 }
 
 func formatAge(d time.Duration) string {
