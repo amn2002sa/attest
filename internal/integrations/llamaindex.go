@@ -1,7 +1,7 @@
 package integrations
 
 import (
-	"fmt"
+
 	"os"
 	"path/filepath"
 )
@@ -195,7 +195,7 @@ func SetupLlamaIndex(framework string) error {
 }
 
 func GenerateLlamaIndexWorkflow() string {
-	return fmt.Sprintf(`name: Attest Validation
+	return `name: Attest Validation
 
 on:
   push:
@@ -233,5 +233,5 @@ jobs:
         with:
           name: attest-results
           path: attest-results/
-`)
+`
 }
