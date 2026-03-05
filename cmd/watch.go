@@ -150,7 +150,7 @@ func scanDirectoryForChanges(rootDir string, capturedFiles map[string]bool, trac
 		return
 	}
 
-	filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
+	if err := filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -183,7 +183,9 @@ func scanDirectoryForChanges(rootDir string, capturedFiles map[string]bool, trac
 		}
 
 		return nil
-	})
+	}); err != nil {
+		fmt.Printf("Warning: failed to scan directory: %v\n", err)
+	}
 }
 
 func isRelevantFile(path string) bool {

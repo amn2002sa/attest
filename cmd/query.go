@@ -41,7 +41,10 @@ var queryIntentCmd = &cobra.Command{
 		fmt.Printf("Intents matching '%s':\n", query)
 		for rows.Next() {
 			var id, goal, status string
-			rows.Scan(&id, &goal, &status)
+			if err := rows.Scan(&id, &goal, &status); err != nil {
+				fmt.Printf("Warning: failed to scan intent: %v\n", err)
+				continue
+			}
 			fmt.Printf("  %s [%s]: %s\n", id, status, goal)
 		}
 		return nil
@@ -70,7 +73,10 @@ var queryTicketCmd = &cobra.Command{
 		fmt.Printf("Intents for Ticket %s:\n", ticketID)
 		for rows.Next() {
 			var id, goal, status string
-			rows.Scan(&id, &goal, &status)
+			if err := rows.Scan(&id, &goal, &status); err != nil {
+				fmt.Printf("Warning: failed to scan intent: %v\n", err)
+				continue
+			}
 			fmt.Printf("  %s [%s]: %s\n", id, status, goal)
 		}
 		return nil

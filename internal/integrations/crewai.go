@@ -1,7 +1,7 @@
 package integrations
 
 import (
-	"fmt"
+
 	"os"
 	"path/filepath"
 )
@@ -289,7 +289,7 @@ func SetupCrewAI(framework string) error {
 }
 
 func GenerateCrewAIWorkflow() string {
-	return fmt.Sprintf(`name: Attest Validation
+	return `name: Attest Validation
 
 on:
   push:
@@ -327,5 +327,5 @@ jobs:
         with:
           name: attest-results
           path: attest-results/
-`)
+`
 }

@@ -1,7 +1,7 @@
 package integrations
 
 import (
-	"fmt"
+
 	"os"
 	"path/filepath"
 )
@@ -226,7 +226,7 @@ func SetupAutoGen(framework string) error {
 }
 
 func GenerateAutoGenWorkflow() string {
-	return fmt.Sprintf(`name: Attest Validation
+	return `name: Attest Validation
 
 on:
   push:
@@ -264,5 +264,5 @@ jobs:
         with:
           name: attest-results
           path: attest-results/
-`)
+`
 }

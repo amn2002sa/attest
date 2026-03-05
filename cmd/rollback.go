@@ -16,7 +16,7 @@ var rollbackCmd = &cobra.Command{
 	Long:  `Restore system state from a previously created checkpoint.`,
 }
 
-var checkpointID string
+
 var lastSafe bool
 
 var rollbackToCheckpointCmd = &cobra.Command{

@@ -1,7 +1,7 @@
 package integrations
 
 import (
-	"fmt"
+
 	"os"
 	"path/filepath"
 )
@@ -181,7 +181,7 @@ func SetupLangChain(framework string) error {
 }
 
 func GenerateLangChainWorkflow() string {
-	return fmt.Sprintf(`name: Attest Validation
+	return `name: Attest Validation
 
 on:
   push:
@@ -219,5 +219,5 @@ jobs:
         with:
           name: attest-results
           path: attest-results/
-`)
+`
 }

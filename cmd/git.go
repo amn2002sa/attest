@@ -11,47 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const preCommitHook = `#!/bin/sh
-# Attest pre-commit hook
-# Automatically checks for intent-linked commits and validates changes
 
-# Exit on any error
-set -e
-
-# Get the directory where this script is located
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ATTEST_BIN="${ATTEST_BIN:-attest}"
-
-# Run attest exec --dry-run to validate the commit
-if [ -x "$ATTEST_BIN" ] || command -v attest &> /dev/null; then
-    "$ATTEST_BIN" exec --dry-run -- backup=file << 'INLINE_HOOK'
-# This hook runs before git commit
-# It validates that the commit follows attest conventions
-INLINE_HOOK
-fi
-
-# Check commit message for intent convention
-COMMIT_MSG_FILE="$1"
-if [ -f "$COMMIT_MSG_FILE" ]; then
-    COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
-    
-    # Pattern: "intent: INT-123 Description"
-    INTENT_PATTERN="^intent: ([A-Z]+-[0-9]+) (.+)$"
-    
-    if echo "$COMMIT_MSG" | grep -qiE "$INTENT_PATTERN"; then
-        # Extract intent ID
-        INTENT_ID=$(echo "$COMMIT_MSG" | grep -oiE "$INTENT_PATTERN" | sed -n 's/^intent: \([A-Z]*-[0-9]*\).*/\1/p')
-        
-        if [ -n "$INTENT_ID" ]; then
-            echo "[attest] Detected intent: $INTENT_ID"
-            echo "[attest] This commit will be linked to intent $INTENT_ID"
-        fi
-    fi
-fi
-
-# Exit with success
-exit 0
-`
 
 var (
 	hookInstallDir string
