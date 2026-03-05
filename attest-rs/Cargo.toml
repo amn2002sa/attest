@@ -1,0 +1,80 @@
+[package]
+name = "attest-rs"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Ecosystem-aligned trust layer for AI agents (Rust)"
+
+[lib]
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+
+
+[dependencies]
+# Async & Utility
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+hex = "0.4"
+async-trait = "0.1"
+dirs = "5.0" # For finding home directory
+clap = { version = "4.4", features = ["derive"] }
+config = "0.13"
+
+# Cryptography & Security
+ed25519-dalek = { version = "2.1", features = ["rand_core", "pem", "pkcs8"] }
+sha2 = "0.10"
+aes-gcm = "0.10"
+rand = "0.8"
+argon2 = "0.5"
+zeroize = { version = "1", features = ["derive"] }
+rpassword = "7.0"
+
+# Networking
+reqwest = { version = "0.11", features = ["json"] }
+
+# Storage (Ecosystem Aligned)
+sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "chrono", "uuid"] }
+
+# Environmental Monitoring
+notify = "6"
+
+# Ecosystem Alignment (Local Paths)
+vex-hardware = { path = "../vex-hardware" }
+vex-core = { git = "https://github.com/provnai/vex" }
+vex-anchor = { git = "https://github.com/provnai/vex" }
+provn-sdk = { git = "https://github.com/provnai/provn-sdk" }
+portable-pty = "0.9.0"
+regex = "1.12.2"
+
+# Plonky3 (ZK Proofs)
+p3-field = "0.4.2"
+p3-matrix = "0.4.2"
+p3-goldilocks = "0.4.2"
+p3-poseidon = "0.4.2"
+p3-merkle-tree = "0.4.2"
+p3-fri = "0.4.2"
+p3-challenger = "0.4.2"
+p3-commit = "0.4.2"
+p3-uni-stark = "0.4.2"
+p3-dft = "0.4.2"
+p3-air = "0.4.2"
+p3-symmetric = "0.4.2"
+p3-util = "0.4.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock", "Win32_Foundation", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_Security_Cryptography", "Win32_Security_Cryptography_Catalog"] }
+windows = { version = "0.62.2", features = ["Win32_Security_Tpm", "Win32_Foundation", "Win32_System_SystemServices", "Win32_Security_Cryptography", "Win32_Security_Cryptography_Catalog"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+tss-esapi = "7.5.0"
+
+[dev-dependencies]
+tempfile = "3.24.0"
+tokio-test = "0.4"
