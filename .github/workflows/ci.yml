@@ -5,10 +5,10 @@ permissions:
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, fix/ci-hardening ]
     tags: [ 'v*' ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, master, fix/ci-hardening ]
 
 jobs:
   test:
@@ -103,7 +103,7 @@ jobs:
 
   build-release:
     needs: [test, lint]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/fix/ci-hardening'
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
@@ -149,13 +149,15 @@ jobs:
         
         # Link against the release build of the Rust core
         export CGO_ENABLED=1
+        export RUST_RELEASE_PATH="$(pwd)/attest-rs/target/release"
+        
         if [ "$GOOS" = "linux" ]; then
-          export CGO_LDFLAGS="-L$(pwd)/attest-rs/target/release -lattest_rs -lssl -lcrypto -ltss2-esys -ltss2-mu -ltss2-tctildr"
+          export CGO_LDFLAGS="-L${RUST_RELEASE_PATH} -lattest_rs -lssl -lcrypto -ltss2-esys -ltss2-mu -ltss2-tctildr"
         elif [ "$GOOS" = "darwin" ]; then
-          export CGO_LDFLAGS="-L$(pwd)/attest-rs/target/release -lattest_rs -framework Security"
+          export CGO_LDFLAGS="-L${RUST_RELEASE_PATH} -lattest_rs -framework Security -framework CoreFoundation"
         else
           # Windows linking via MSVC/CNG
-          export CGO_LDFLAGS="-L$(pwd)/attest-rs/target/release -lattest_rs -lbcrypt -lncrypt"
+          export CGO_LDFLAGS="-L${RUST_RELEASE_PATH} -lattest_rs -lbcrypt -lncrypt"
         fi
 
         go build -o "$BINARY_NAME" ./cmd/attest
