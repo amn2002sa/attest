@@ -36,7 +36,9 @@ var guardrailsEnableCmd = &cobra.Command{
 	Long:  "Enable the guardrails safety system for all command executions.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		manager := guardrails.GetGlobalManager()
-		manager.SetEnabled(true)
+		if err := manager.SetEnabled(true); err != nil {
+			return fmt.Errorf("failed to enable guardrails: %w", err)
+		}
 
 		green := color.New(color.FgGreen).SprintFunc()
 		fmt.Printf("%s Guardrails enabled\n", green("✓"))
@@ -51,7 +53,9 @@ var guardrailsDisableCmd = &cobra.Command{
 	Long:  "Disable the guardrails safety system (use with caution!).",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		manager := guardrails.GetGlobalManager()
-		manager.SetEnabled(false)
+		if err := manager.SetEnabled(false); err != nil {
+			return fmt.Errorf("failed to disable guardrails: %w", err)
+		}
 
 		yellow := color.New(color.FgYellow).SprintFunc()
 		fmt.Printf("%s Guardrails disabled - proceed with caution!\n", yellow("⚠"))

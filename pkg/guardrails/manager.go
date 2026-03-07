@@ -134,7 +134,9 @@ func DefaultConfig() *GuardrailsConfig {
 	// Try to load existing config
 	configPath := filepath.Join(storageDir, "config.json")
 	if data, err := os.ReadFile(configPath); err == nil {
-		json.Unmarshal(data, config)
+		if err := json.Unmarshal(data, config); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to parse guardrails config: %v\n", err)
+		}
 	}
 
 	return config
@@ -173,10 +175,10 @@ func NewGuardrailsManagerWithConfig(config *GuardrailsConfig) *GuardrailsManager
 }
 
 // SetEnabled enables or disables guardrails
-func (m *GuardrailsManager) SetEnabled(enabled bool) {
+func (m *GuardrailsManager) SetEnabled(enabled bool) error {
 	m.config.Enabled = enabled
 	m.interceptor.SetEnabled(enabled)
-	m.SaveConfiguration()
+	return m.SaveConfiguration()
 }
 
 // GetPolicies returns all registered policies

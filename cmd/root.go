@@ -62,7 +62,9 @@ func initConfig() {
 	// Auto-migrate database
 	db, err := storage.NewDB(cfg.DBPath)
 	if err == nil {
-		db.Migrate()
+		if err := db.Migrate(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Database migration failed: %v\n", err)
+		}
 		db.Close()
 	}
 }
