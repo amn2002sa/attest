@@ -24,6 +24,7 @@ var (
 	attestInput   string
 	attestSession string
 	attestFormat  string
+	attestPass    string
 )
 
 func init() {
@@ -41,6 +42,7 @@ func init() {
 	attestCreateCmd.Flags().StringVarP(&attestTarget, "target", "x", "", "action target")
 	attestCreateCmd.Flags().StringVarP(&attestInput, "input", "n", "", "action input")
 	attestCreateCmd.Flags().StringVar(&attestSession, "session", "", "session ID")
+	attestCreateCmd.Flags().StringVar(&attestPass, "passphrase", "", "passphrase to unlock agent key")
 
 	attestListCmd.Flags().StringVar(&attestAgentID, "agent", "", "filter by agent")
 	attestListCmd.Flags().StringVar(&attestIntent, "intent", "", "filter by intent")
@@ -168,8 +170,11 @@ func runAttestCreate() error {
 	pubKeyBase64 := agent.PublicKey
 	encryptedPrivateKey := agent.PrivateKeyEncrypted
 
-	// Retrieve passphrase from env or prompt
-	passphrase := os.Getenv("ATTEST_PASSPHRASE")
+	// Retrieve passphrase from flag, env, or prompt
+	passphrase := attestPass
+	if passphrase == "" {
+		passphrase = os.Getenv("ATTEST_PASSPHRASE")
+	}
 	if passphrase == "" && encryptedPrivateKey != "" {
 		fmt.Printf("Enter passphrase for agent %s: ", name)
 		bytePassphrase, err := term.ReadPassword(int(syscall.Stdin))
@@ -307,7 +312,12 @@ func runAttestList() error {
 		for _, a := range attestations {
 			intentStr := ""
 			if a.IntentID != "" {
-				intentStr = fmt.Sprintf(" [%s]", a.IntentID[:8])
+				// Increase intent ID display length from 8 to 12 characters
+				displayIntentID := a.IntentID
+				if len(displayIntentID) > 12 {
+					displayIntentID = displayIntentID[:12]
+				}
+				intentStr = fmt.Sprintf(" [%s]", displayIntentID)
 			}
 			fmt.Printf("%-20s %-12s %-10s %s%s\n", a.ID[:20], a.AgentName[:12], a.Action[:10], a.Timestamp[:10], intentStr)
 		}

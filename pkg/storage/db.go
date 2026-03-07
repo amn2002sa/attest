@@ -92,6 +92,8 @@ func (db *DB) Migrate() error {
 		`CREATE TABLE IF NOT EXISTS reversible_actions (
 			id TEXT PRIMARY KEY,
 			attestation_id TEXT NOT NULL,
+			command TEXT,
+			working_dir TEXT,
 			backup_path TEXT NOT NULL,
 			reverse_command TEXT,
 			status TEXT DEFAULT 'pending',

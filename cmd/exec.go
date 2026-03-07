@@ -24,12 +24,12 @@ var (
 )
 
 func init() {
-	execCmd.Flags().BoolVar(&execReversible, "reversible", false, "make this execution reversible")
-	execCmd.Flags().StringVar(&execIntent, "intent", "", "link to an intent ID")
-	execCmd.Flags().StringVar(&execAgent, "agent", "", "agent ID (required for signing)")
-	execCmd.Flags().BoolVar(&execDryRun, "dry-run", false, "show what would happen without executing")
-	execCmd.Flags().StringVar(&execBackupType, "backup", "file", "backup type (file, dir, none)")
-	execCmd.Flags().StringVar(&execEnv, "env", "development", "environment (development, staging, production)")
+	execRunCmd.Flags().BoolVar(&execReversible, "reversible", false, "make this execution reversible")
+	execRunCmd.Flags().StringVar(&execIntent, "intent", "", "link to an intent ID")
+	execRunCmd.Flags().StringVar(&execAgent, "agent", "", "agent ID (required for signing)")
+	execRunCmd.Flags().BoolVar(&execDryRun, "dry-run", false, "show what would happen without executing")
+	execRunCmd.Flags().StringVar(&execBackupType, "backup", "file", "backup type (file, dir, none)")
+	execRunCmd.Flags().StringVar(&execEnv, "env", "development", "environment (development, staging, production)")
 
 	execCmd.AddCommand(execRunCmd)
 	execCmd.AddCommand(execRollbackCmd)

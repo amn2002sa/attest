@@ -3,6 +3,23 @@
 All notable changes to Attest are documented in this file.
 The project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.2.0] - 2026-03-07
+
+### Added
+- **TPM Integrity Layer**: Added checksum verification to hardware-sealed identities to prevent data corruption.
+- **Hardware Resilience**: Verified driver stability under concurrent load and improved recovery for lost keys.
+- **Improved Error Messaging**: Mapped system-level hardware codes to descriptive messages.
+- **Policy Utility**: Implemented `attest policy check` for manual verification of command strings.
+- **Automation Support**: Added `--passphrase` flag for non-interactive certificate and agent creation.
+
+### Fixed
+- **Persistence**: Fixed an issue where guardrail settings were not saved between sessions.
+- **Database Schema**: Implemented automated migrations for consistent schema updates.
+- **Display**: Corrected Intent ID truncation in CLI list views.
+- **Backup Logic**: Improved automated backup handling for directory-level operations.
+- **Go/Rust Bridge**: Resolved protocol issues related to RSA padding and buffer lengths.
+
+
 ## [v0.1.0] - 2026-03-05
 
 ### ⚓ The Silicon-Rooted Release

@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -17,6 +18,16 @@ var guardrailsCmd = &cobra.Command{
 
 Provides policy enforcement, checkpoint creation, and automatic rollback
 capabilities to prevent disasters during command execution.`,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		manager := guardrails.GetGlobalManager()
+		storageDir := filepath.Join(cfg.DataDir, "checkpoints")
+		if manager.GetConfig().StorageDir != storageDir {
+			config := manager.GetConfig()
+			config.StorageDir = storageDir
+			manager.SetConfig(config)
+		}
+		return nil
+	},
 }
 
 var guardrailsEnableCmd = &cobra.Command{

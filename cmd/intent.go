@@ -116,7 +116,7 @@ var intentListCmd = &cobra.Command{
 			if len(goal) > 28 {
 				goal = goal[:28] + "..."
 			}
-			fmt.Printf("%-22s %-30s %-12s %s\n", i.ID[:16], goal, i.Status, i.CreatedAt.Format("2006-01-02"))
+			fmt.Printf("%-22s %-30s %-12s %s\n", i.ID, goal, i.Status, i.CreatedAt.Format("2006-01-02"))
 		}
 		fmt.Printf("\nTotal: %d intents\n", len(intents))
 	},

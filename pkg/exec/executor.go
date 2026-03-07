@@ -276,7 +276,14 @@ func (e *Executor) Execute(opts ExecuteOptions) *ExecuteResult {
 
 	if opts.Reversible {
 		var err error
-		backupPath, err = e.backupManager.CreateBackup(opts.WorkingDir, opts.BackupType)
+		actualBackupType := opts.BackupType
+		
+		// If working dir is a directory and type is file, upgrade to directory backup
+		if info, sErr := os.Stat(opts.WorkingDir); sErr == nil && info.IsDir() && actualBackupType == BackupTypeFile {
+			actualBackupType = BackupTypeDir
+		}
+
+		backupPath, err = e.backupManager.CreateBackup(opts.WorkingDir, actualBackupType)
 		if err != nil {
 			return &ExecuteResult{
 				Success: false,

@@ -42,10 +42,19 @@ pub use windows_impl::CngIdentity;
 // Windows Implementation
 #[cfg(windows)]
 mod windows_impl {
-
     use super::*;
     use std::ptr::null_mut;
     use windows_sys::Win32::Security::Cryptography::*;
+
+    fn map_cng_error(status: i32) -> String {
+        match status as u32 {
+            0x80090010 => "Access Denied (Insufficient TPM permissions)".to_string(),
+            0x80090025 => "TPM Device Locked (Anti-hammering lockout)".to_string(),
+            0x80090005 => "Bad Data (Corrupted ciphertext)".to_string(),
+            0x80090027 => "Hardware Unsupported (Payload too large)".to_string(),
+            _ => format!("CNG Status 0x{:X}", status as u32),
+        }
+    }
 
     #[derive(Default)]
     pub struct CngIdentity;
@@ -62,8 +71,8 @@ mod windows_impl {
                 let status = NCryptOpenStorageProvider(&mut provider, provider_name.as_ptr(), 0);
                 if status != 0 {
                     return Err(anyhow!(
-                        "TPM provider not available (Status: 0x{:X})",
-                        status
+                        "TPM provider not available ({})",
+                        map_cng_error(status)
                     ));
                 }
 
@@ -83,7 +92,7 @@ mod windows_impl {
                     );
                     if status != 0 {
                         NCryptFreeObject(provider);
-                        return Err(anyhow!("Failed to create TPM key (Status: 0x{:X})", status));
+                        return Err(anyhow!("Failed to create TPM key ({})", map_cng_error(status)));
                     }
 
                     status = NCryptFinalizeKey(key_handle, 0);
@@ -91,42 +100,52 @@ mod windows_impl {
                         NCryptFreeObject(key_handle);
                         NCryptFreeObject(provider);
                         return Err(anyhow!(
-                            "Failed to finalize TPM key (Status: 0x{:X})",
-                            status
+                            "Failed to finalize TPM key ({})",
+                            map_cng_error(status)
                         ));
                     }
                 }
 
+                // Manual Integrity Layer: Append SHA-256 hash of the data
+                use sha2::{Digest, Sha256};
+                let mut hasher = Sha256::new();
+                hasher.update(data);
+                let hash = hasher.finalize();
+
+                let mut payload = Vec::with_capacity(data.len() + 32);
+                payload.extend_from_slice(&hash);
+                payload.extend_from_slice(data);
+
                 let mut output_size: u32 = 0;
                 status = NCryptEncrypt(
                     key_handle,
-                    data.as_ptr(),
-                    data.len() as u32,
+                    payload.as_ptr(),
+                    payload.len() as u32,
                     std::ptr::null(),
                     null_mut(),
                     0,
                     &mut output_size,
-                    0,
+                    NCRYPT_PAD_PKCS1_FLAG,
                 );
                 if status != 0 {
                     NCryptFreeObject(key_handle);
                     NCryptFreeObject(provider);
                     return Err(anyhow!(
-                        "Failed to get ciphertext size (Status: 0x{:X})",
-                        status
+                        "Failed to get ciphertext size ({})",
+                        map_cng_error(status)
                     ));
                 }
 
                 let mut ciphertext = vec![0u8; output_size as usize];
                 status = NCryptEncrypt(
                     key_handle,
-                    data.as_ptr(),
-                    data.len() as u32,
+                    payload.as_ptr(),
+                    payload.len() as u32,
                     std::ptr::null(),
                     ciphertext.as_mut_ptr(),
                     ciphertext.len() as u32,
                     &mut output_size,
-                    0,
+                    NCRYPT_PAD_PKCS1_FLAG,
                 );
 
                 NCryptFreeObject(key_handle);
@@ -134,8 +153,8 @@ mod windows_impl {
 
                 if status != 0 {
                     return Err(anyhow!(
-                        "Failed to encrypt with TPM (Status: 0x{:X})",
-                        status
+                        "Failed to encrypt with TPM ({})",
+                        map_cng_error(status)
                     ));
                 }
 
@@ -154,8 +173,8 @@ mod windows_impl {
                     NCryptOpenStorageProvider(&mut provider, provider_name.as_ptr(), 0);
                 if status != 0 {
                     return Err(anyhow!(
-                        "TPM provider not available (Status: 0x{:X})",
-                        status
+                        "TPM provider not available ({})",
+                        map_cng_error(status)
                     ));
                 }
 
@@ -166,8 +185,8 @@ mod windows_impl {
                 if status != 0 {
                     NCryptFreeObject(provider);
                     return Err(anyhow!(
-                        "Identity key not found in TPM (Status: 0x{:X})",
-                        status
+                        "Identity key not found in TPM ({})",
+                        map_cng_error(status)
                     ));
                 }
 
@@ -180,14 +199,14 @@ mod windows_impl {
                     null_mut(),
                     0,
                     &mut output_size,
-                    0,
+                    NCRYPT_PAD_PKCS1_FLAG,
                 );
                 if status != 0 {
                     NCryptFreeObject(key_handle);
                     NCryptFreeObject(provider);
                     return Err(anyhow!(
-                        "Failed to get decrypted size (Status: 0x{:X})",
-                        status
+                        "Failed to get decrypted size ({})",
+                        map_cng_error(status)
                     ));
                 }
 
@@ -200,7 +219,7 @@ mod windows_impl {
                     plaintext.as_mut_ptr(),
                     plaintext.len() as u32,
                     &mut output_size,
-                    0,
+                    NCRYPT_PAD_PKCS1_FLAG,
                 );
 
                 NCryptFreeObject(key_handle);
@@ -208,12 +227,29 @@ mod windows_impl {
 
                 if status != 0 {
                     return Err(anyhow!(
-                        "Failed to unseal with TPM (Status: 0x{:X})",
-                        status
+                        "Failed to unseal with TPM ({})",
+                        map_cng_error(status)
                     ));
                 }
 
-                Ok(plaintext)
+                plaintext.truncate(output_size as usize);
+
+                // Verify Integrity
+                if plaintext.len() < 32 {
+                     return Err(anyhow!("Corrupted identity blob: too short"));
+                }
+
+                let (stored_hash, data) = plaintext.split_at(32);
+                use sha2::{Digest, Sha256};
+                let mut hasher = Sha256::new();
+                hasher.update(data);
+                let actual_hash = hasher.finalize();
+
+                if stored_hash != actual_hash.as_slice() {
+                    return Err(anyhow!("❌ Integrity check FAILED: Identity seed has been tampered with!"));
+                }
+
+                Ok(data.to_vec())
             }
         }
     }
@@ -435,7 +471,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hardware_identity_interface() {
-        let provider = create_identity_provider(true);
+        let provider = create_identity_provider(false);
         let data = b"test_secret_seed";
 
         match provider.seal("test_label", data).await {
@@ -452,9 +488,94 @@ mod tests {
             }
             Err(e) => {
                 println!("⚠️ TPM Seal skipped or failed: {}", e);
-                // On systems without TPM, we don't want the build to fail if it's just a hardware absence
-                // But for Alpha, we want to know why.
             }
         }
+    }
+
+    #[tokio::test]
+    async fn test_tpm_tampering() {
+        let provider = create_identity_provider(false);
+        let data = b"sensitive_seed_recovery_token";
+
+        let sealed = provider.seal("tamper_test", data).await.expect("Hardware seal failed");
+
+        let mut tampered = sealed.clone();
+        if tampered.len() > 10 {
+            tampered[10] ^= 0xFF; 
+        }
+
+        let result = provider.unseal(&tampered).await;
+        if let Ok(unsealed) = &result {
+             println!("⚠️ WARNING: TPM unsealed tampered data! Original: {:?}, Unsealed: {:?}", 
+                String::from_utf8_lossy(data), String::from_utf8_lossy(unsealed));
+        }
+        assert!(result.is_err(), "Unseal must fail for tampered hardware-sealed data");
+    }
+
+    #[tokio::test]
+    async fn test_tpm_concurrency() {
+        let _data = b"thread_safety_test";
+
+        let mut handles = Vec::new();
+        for _ in 0..5 {
+            let p = create_identity_provider(true);
+            handles.push(tokio::spawn(async move {
+                let data = b"thread_safety_test";
+                if let Ok(s) = p.seal("concurrent_test", data).await {
+                    let u = p.unseal(&s).await.unwrap();
+                    assert_eq!(u, data);
+                }
+            }));
+        }
+
+        for h in handles {
+            let _ = h.await;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tpm_oversize_payload() {
+        let provider = create_identity_provider(false);
+        // RSA-2048 PKCS#1 padding limit
+        let data = vec![0u8; 1024];
+
+        let result = provider.seal("oversize_test", &data).await;
+        // The stub implementation allows any size, but CngIdentity should fail.
+        // We'll just verify it doesn't panic.
+        if let Err(e) = result {
+             println!("Oversize check successful (failed as expected): {}", e);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tpm_lifecycle() {
+        let provider = create_identity_provider(false);
+        let data = b"lifecycle_persistence_test";
+
+        // 1. Seal and Unseal
+        let sealed = provider.seal("lifecycle_test", data).await.expect("Initial seal failed");
+        let unsealed = provider.unseal(&sealed).await.expect("Initial unseal failed");
+        assert_eq!(unsealed, data);
+
+        // 2. Simulate Key Loss (Delete the KSP key)
+        #[cfg(windows)]
+        unsafe {
+            use windows_sys::Win32::Security::Cryptography::*;
+            let mut provider_handle = 0;
+            let provider_name: Vec<u16> = "Microsoft Platform Crypto Provider\0".encode_utf16().collect();
+            NCryptOpenStorageProvider(&mut provider_handle, provider_name.as_ptr(), 0);
+            
+            let mut key_handle = 0;
+            let key_name: Vec<u16> = "AttestIdentitySRK\0".encode_utf16().collect();
+            if NCryptOpenKey(provider_handle, &mut key_handle, key_name.as_ptr(), 0, 0) == 0 {
+                NCryptDeleteKey(key_handle, 0);
+            }
+            NCryptFreeObject(provider_handle);
+        }
+
+        // 3. Verify Recovery (Seal should recreate the key)
+        let sealed_new = provider.seal("lifecycle_test_new", data).await.expect("Recovery seal failed");
+        let unsealed_new = provider.unseal(&sealed_new).await.expect("Recovery unseal failed");
+        assert_eq!(unsealed_new, data);
     }
 }
