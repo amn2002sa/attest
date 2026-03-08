@@ -333,8 +333,6 @@ mod stub_impl {
             family
         }
     }
-
-    pub type StubWatchman = ProcFsWatchman;
 }
 
 // -------------------------------------------------------------

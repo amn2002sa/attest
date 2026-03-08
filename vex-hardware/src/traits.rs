@@ -11,6 +11,30 @@ pub trait HardwareIdentity: Send + Sync {
     /// Unseal a secret using the hardware's private key.
     /// This should fail if the integrity of the machine state is compromised (if PCRs are checked).
     async fn unseal(&self, blob: &[u8]) -> Result<Vec<u8>>;
+
+    /// Sign a handshake hash using the hardware identity key.
+    async fn sign_handshake_hash(&self, hash: &[u8]) -> Result<[u8; 64]>;
+
+    /// Perform a Diffie-Hellman exchange using the hardware-sealed static key.
+    async fn dh(&self, remote_public_key: &[u8]) -> Result<[u8; 32]>;
+
+    /// Generate a TPM Quote over the PCR state using the hardware identity key.
+    /// The `nonce` is typically the `capsule_root` or a fresh challenge.
+    async fn generate_quote(&self, nonce: &[u8]) -> Result<TpmQuote>;
+
+    /// Retrieve the public key (AID) associated with this hardware identity.
+    async fn public_key(&self) -> Result<Vec<u8>>;
+}
+
+/// Represents a TPM 2.0 Quote.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TpmQuote {
+    /// The TPMS_ATTEST binary structure (signed message).
+    pub message: Vec<u8>,
+    /// The signature over the message.
+    pub signature: Vec<u8>,
+    /// Selected PCR values at the time of the quote.
+    pub pcrs: Vec<(u32, Vec<u8>)>,
 }
 
 /// Abstraction for Network Monitoring (Process/Socket correlation)

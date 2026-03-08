@@ -125,24 +125,22 @@ impl AuditStore {
 
         self.local.save_event(&event).await?;
 
-        // 3. Generate ZK Proof (Phase 2)
+        // 3. Generate ZK Proof
         let prev_root = last_hash
             .as_ref()
             .map(|h| {
                 let mut arr = [0u8; 32];
                 let decoded = hex::decode(h).unwrap_or_default();
-                if decoded.len() >= 32 {
-                    arr.copy_from_slice(&decoded[..32]);
-                }
+                let len = decoded.len().min(32);
+                arr[..len].copy_from_slice(&decoded[..len]);
                 arr
             })
             .unwrap_or([0u8; 32]);
 
         let event_hash_bytes = hex::decode(&event.hash).unwrap_or_default();
         let mut event_hash = [0u8; 32];
-        if event_hash_bytes.len() >= 32 {
-            event_hash.copy_from_slice(&event_hash_bytes[..32]);
-        }
+        let hash_len = event_hash_bytes.len().min(32);
+        event_hash[..hash_len].copy_from_slice(&event_hash_bytes[..hash_len]);
 
         if let Ok(proof) = crate::zk::AuditProver::prove_transition(prev_root, event_hash) {
             let mut updated_event = event.clone();

@@ -15,6 +15,10 @@ unsigned char* attest_seal(const unsigned char* data, size_t data_len, size_t* o
 unsigned char* attest_unseal(const unsigned char* blob, size_t blob_len, size_t* out_len);
 void attest_free_buffer(unsigned char* ptr, size_t len);
 void attest_set_strict_hardware(bool strict);
+void* attest_policy_engine_new();
+void attest_policy_engine_free(void* ptr);
+void attest_policy_engine_load_defaults(void* ptr);
+bool attest_verify_intent(void* agent_ptr, void* policy_ptr, const char* intent_json);
 */
 import "C"
 
@@ -87,4 +91,39 @@ func Unseal(blob []byte) ([]byte, error) {
 	result := C.GoBytes(unsafe.Pointer(ptr), C.int(outLen))
 	C.attest_free_buffer(ptr, outLen)
 	return result, nil
+}
+
+// PolicyEngine manages security guardrails
+type PolicyEngine struct {
+	ptr unsafe.Pointer
+}
+
+// NewPolicyEngine creates a new policy engine using the Rust core
+func NewPolicyEngine() *PolicyEngine {
+	return &PolicyEngine{ptr: C.attest_policy_engine_new()}
+}
+
+// Free deallocates the Rust-side engine
+func (e *PolicyEngine) Free() {
+	if e.ptr != nil {
+		C.attest_policy_engine_free(e.ptr)
+		e.ptr = nil
+	}
+}
+
+// LoadDefaults loads built-in safety policies
+func (e *PolicyEngine) LoadDefaults() {
+	if e.ptr != nil {
+		C.attest_policy_engine_load_defaults(e.ptr)
+	}
+}
+
+// VerifyIntent checks if an intent goal is allowed by the policy engine
+func (a *AttestAgent) VerifyIntent(engine *PolicyEngine, intentJSON string) bool {
+	if a.ptr == nil || engine == nil || engine.ptr == nil {
+		return false
+	}
+	cStr := C.CString(intentJSON)
+	defer C.free(unsafe.Pointer(cStr))
+	return bool(C.attest_verify_intent(a.ptr, engine.ptr, cStr))
 }

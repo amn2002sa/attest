@@ -29,7 +29,13 @@ impl AttestTerminalInterceptor {
         // 0. Evaluate Policy
         {
             let policy = self.policy.lock().await;
-            let (allowed, results) = policy.should_allow(cmd_line);
+            let ctx = crate::runtime::policy::ActionContext {
+                action_type: "command".into(),
+                target: cmd_line.into(),
+                agent_id: self.agent.id.clone(),
+                ..Default::default()
+            };
+            let (allowed, results) = policy.should_allow(&ctx);
 
             if !allowed {
                 let violation_msg = results

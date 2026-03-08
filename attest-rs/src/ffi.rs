@@ -1,7 +1,8 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 use crate::id::AttestAgent;
-use std::ffi::CString;
+use crate::runtime::policy::PolicyEngine;
+use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
 use crate::tpm::create_identity_provider;
@@ -130,6 +131,73 @@ pub extern "C" fn attest_free_buffer(ptr: *mut u8, len: usize) {
     if !ptr.is_null() {
         unsafe {
             let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len));
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn attest_policy_engine_new() -> *mut PolicyEngine {
+    let engine = PolicyEngine::new();
+    Box::into_raw(Box::new(engine))
+}
+
+#[no_mangle]
+pub extern "C" fn attest_policy_engine_free(ptr: *mut PolicyEngine) {
+    if !ptr.is_null() {
+        unsafe {
+            let _ = Box::from_raw(ptr);
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn attest_policy_engine_load_defaults(ptr: *mut PolicyEngine) {
+    let engine = unsafe {
+        assert!(!ptr.is_null());
+        &mut *ptr
+    };
+    engine.load_defaults();
+}
+
+#[no_mangle]
+pub extern "C" fn attest_verify_intent(
+    agent_ptr: *mut AttestAgent,
+    policy_ptr: *mut PolicyEngine,
+    intent_json: *const c_char,
+) -> bool {
+    let result = std::panic::catch_unwind(|| {
+        let _agent = unsafe {
+            assert!(!agent_ptr.is_null());
+            &*agent_ptr
+        };
+        let policy = unsafe {
+            assert!(!policy_ptr.is_null());
+            &*policy_ptr
+        };
+        let c_str = unsafe {
+            assert!(!intent_json.is_null());
+            CStr::from_ptr(intent_json)
+        };
+        let intent_str = c_str.to_str().unwrap();
+        let intent: crate::runtime::intent::Intent = serde_json::from_str(intent_str).unwrap();
+
+        let ctx = crate::runtime::policy::ActionContext {
+            action_type: "intent".into(),
+            target: intent.goal.clone(),
+            agent_id: _agent.id.clone(),
+            intent_id: intent.id.clone(),
+            ..Default::default()
+        };
+
+        let (allowed, _) = policy.should_allow(&ctx);
+        allowed
+    });
+
+    match result {
+        Ok(allowed) => allowed,
+        Err(_) => {
+            eprintln!("[FFI] attest_verify_intent PANICKED");
+            false
         }
     }
 }

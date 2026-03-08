@@ -173,7 +173,14 @@ jobs:
 
         go build -o "$BINARY_NAME" ./cmd/attest
 
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: attest-${{ matrix.os }}-${{ matrix.arch }}
+        path: attest-*
+
     - name: Create release
+      if: startsWith(github.ref, 'refs/tags/v')
       uses: softprops/action-gh-release@v1
       with:
         files: attest-*
