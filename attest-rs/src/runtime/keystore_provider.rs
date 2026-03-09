@@ -33,16 +33,31 @@ pub struct TpmKeyProvider {
 }
 
 impl TpmKeyProvider {
-    /// Loads the TpmKeyProvider from the hardware.
-    pub fn new() -> Result<Self> {
-        let tpm = create_identity_provider(false);
+    /// Loads the TpmKeyProvider from the hardware, optionally with a sealed seed and public key.
+    pub fn new(sealed_seed: Option<Vec<u8>>, identity_public_key: Option<Vec<u8>>) -> Result<Self> {
+        let mut tpm = create_identity_provider(false);
+        if let Some(ss) = sealed_seed {
+            tpm.set_sealed_seed(ss);
+        }
+        if let Some(pk) = identity_public_key {
+            tpm.set_public_key(pk);
+        }
         Ok(Self { tpm })
     }
 }
 
 impl KeyProvider for TpmKeyProvider {
     fn aid(&self) -> BoxFuture<'_, Result<[u8; 32]>> {
-        Box::pin(async { Ok([0u8; 32]) })
+        let tpm = &self.tpm;
+        Box::pin(async move {
+            let pk = tpm.public_key().await?;
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(&pk);
+            let mut aid = [0u8; 32];
+            aid.copy_from_slice(&hasher.finalize());
+            Ok(aid)
+        })
     }
 
     fn sign_handshake_hash(&self, hash: &[u8]) -> BoxFuture<'_, Result<[u8; 64]>> {
