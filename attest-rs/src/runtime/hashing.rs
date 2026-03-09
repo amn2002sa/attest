@@ -18,10 +18,16 @@ pub enum SegmentType {
 /// The Authority segment contains governance and replay protection data.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct AuthoritySegment {
-    /// 8-byte nonce for replay protection.
-    pub nonce: u64,
+    /// Canonical Capsule ID from CHORA.
+    pub capsule_id: String,
+    /// The outcome of the governance check (ALLOW, HALT, ESCALATE).
+    pub outcome: String,
+    /// Reason code for the decision.
+    pub reason_code: String,
     /// Reference to the trace root being authorized.
     pub trace_root: [u8; 32],
+    /// 8-byte execution nonce for replay protection.
+    pub nonce: u64,
 }
 
 /// The Witness segment contains the append-only log record coordinates from CHORA.
@@ -31,8 +37,8 @@ pub struct WitnessSegment {
     pub chora_node_id: String,
     /// The hash of the receipt on the append-only log.
     pub receipt_hash: String,
-    /// Unix timestamp of the receipt issuance.
-    pub timestamp: u64,
+    /// RFC3339 UTC timestamp of the receipt issuance.
+    pub timestamp: String,
 }
 
 /// Helper for performing JCS-compliant hashing of message segments.
@@ -109,8 +115,11 @@ mod tests {
     #[test]
     fn test_authority_segment_hashing() {
         let auth = AuthoritySegment {
-            nonce: 12345678,
+            capsule_id: "test-id".into(),
+            outcome: "ALLOW".into(),
+            reason_code: "OK".into(),
             trace_root: [0u8; 32],
+            nonce: 12345678,
         };
 
         let hash = SegmentHasher::hash(&auth).expect("Should hash successfully");
