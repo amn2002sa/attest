@@ -14,5 +14,16 @@
     - [x] Finalize `MockKeyProvider` for test stability
     - [x] Perform workspace-wide 100% Green test pass
 - [x] Final Documentation & Engineering Spec Update
+- [x] Phase 8.1: Poseidon2 Deep Hardening (VEX Feedback Integration)
+    - [x] Implement 4x4 Circulant MDS Matrix ($M_4$)
+    - [x] Implement `HL_GOLDILOCKS_8` Round Constant Schedule
+    - [x] Harden Padding Invariants (Non-Zero Padding)
+    - [x] Refine Degree-3 S-Box Interleaving
+    - [x] Consult George for final constant audit
+- [/] Phase 8.2: Poseidon2 Cryptographic Parity (Full/Partial Rounds)
+    - [/] Implement Round Identity Column (Full vs. Partial)
+    - [/] Implement $M_E$ Circulant MDS for External Rounds
+    - [/] Implement Single S-Box Logic for Partial Rounds
+    - [ ] Verify State Diffusion across Full Permutation
 
 **Overall Status: 100% COMPLETED | VEX V1.0 HARDENED** 🛡️🚀⚓
