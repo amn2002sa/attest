@@ -24,6 +24,14 @@ pub trait HardwareIdentity: Send + Sync {
 
     /// Retrieve the public key (AID) associated with this hardware identity.
     async fn public_key(&self) -> Result<Vec<u8>>;
+
+    /// Inject a sealed seed for use in signature and DH operations.
+    /// This is mandatory for signing and DH in the 'Software-Seed + TPM-Seal' model.
+    fn set_sealed_seed(&mut self, _sealed_seed: Vec<u8>) {}
+
+    /// Inject the matching public key for this identity.
+    /// This avoids unnecessary unsealing operations to retrieve the public key.
+    fn set_public_key(&mut self, _pubkey: Vec<u8>) {}
 }
 
 /// Represents a TPM 2.0 Quote.

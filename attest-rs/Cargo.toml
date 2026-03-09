@@ -50,7 +50,7 @@ ring = "0.17"
 notify = "6"
 
 # Ecosystem Alignment (Local Paths)
-vex-hardware = { path = "../vex-hardware" }
+vex-hardware = { path = "../../vex/crates/vex-hardware" }
 vex-core = { git = "https://github.com/provnai/vex" }
 vex-anchor = { git = "https://github.com/provnai/vex" }
 provn-sdk = { git = "https://github.com/provnai/provn-sdk" }

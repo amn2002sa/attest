@@ -7,7 +7,15 @@ use async_trait::async_trait;
 #[allow(unused_variables)]
 pub fn create_identity_provider(allow_fallback: bool) -> Box<dyn HardwareIdentity> {
     #[cfg(windows)]
-    return Box::new(windows_impl::CngIdentity {});
+    {
+        if allow_fallback {
+            // On Windows, we try to open a test key to see if TPM is available, 
+            // but for tests we often want the stub if we're not explicitly doing hardware tests.
+            Box::new(stub_impl::StubIdentity::default())
+        } else {
+            Box::new(windows_impl::CngIdentity::default())
+        }
+    }
 
     #[cfg(target_os = "linux")]
     {
@@ -46,6 +54,7 @@ mod windows_impl {
     use super::*;
     use std::ptr::null_mut;
     use windows_sys::Win32::Security::Cryptography::*;
+    use zeroize::Zeroize;
 
     fn map_cng_error(status: i32) -> String {
         match status as u32 {
@@ -57,8 +66,19 @@ mod windows_impl {
         }
     }
 
-    #[derive(Default)]
-    pub struct CngIdentity;
+    pub struct CngIdentity {
+        pub sealed_seed: Option<Vec<u8>>,
+        pub identity_public_key: Option<Vec<u8>>,
+    }
+
+    impl Default for CngIdentity {
+        fn default() -> Self {
+            Self { 
+                sealed_seed: None,
+                identity_public_key: None,
+            }
+        }
+    }
 
     #[async_trait]
     impl HardwareIdentity for CngIdentity {
@@ -68,7 +88,7 @@ mod windows_impl {
                 let provider_name: Vec<u16> = "Microsoft Platform Crypto Provider\0"
                     .encode_utf16()
                     .collect();
-                let status = NCryptOpenStorageProvider(&mut provider, provider_name.as_ptr(), 0);
+                let mut status = NCryptOpenStorageProvider(&mut provider, provider_name.as_ptr(), 0);
                 if status != 0 {
                     return Err(anyhow!(
                         "TPM provider not available ({})",
@@ -80,7 +100,7 @@ mod windows_impl {
                 let key_name: Vec<u16> = "AttestIdentitySRK\0".encode_utf16().collect();
                 let alg_id: Vec<u16> = "RSA\0".encode_utf16().collect();
 
-                let mut status = NCryptOpenKey(provider, &mut key_handle, key_name.as_ptr(), 0, 0);
+                status = NCryptOpenKey(provider, &mut key_handle, key_name.as_ptr(), 0, 0);
                 if status != 0 {
                     status = NCryptCreatePersistedKey(
                         provider,
@@ -111,7 +131,7 @@ mod windows_impl {
                 use sha2::{Digest, Sha256};
                 let mut hasher = Sha256::new();
                 hasher.update(data);
-                let mut payload = Vec::with_capacity(data.len() + 32);
+                let mut payload = Vec::with_capacity(32 + data.len());
                 payload.extend_from_slice(&hasher.finalize());
                 payload.extend_from_slice(data);
 
@@ -159,14 +179,139 @@ mod windows_impl {
             }
         }
 
-        async fn unseal(&self, _blob: &[u8]) -> Result<Vec<u8>> {
-            todo!("Windows CNG identity unseal for Noise")
+        async fn unseal(&self, blob: &[u8]) -> Result<Vec<u8>> {
+            unsafe {
+                let mut provider: usize = 0;
+                let provider_name: Vec<u16> = "Microsoft Platform Crypto Provider\0"
+                    .encode_utf16()
+                    .collect();
+                let mut status = NCryptOpenStorageProvider(&mut provider, provider_name.as_ptr(), 0);
+                if status != 0 {
+                    return Err(anyhow!("TPM provider not available"));
+                }
+
+                let mut key_handle: usize = 0;
+                let key_name: Vec<u16> = "AttestIdentitySRK\0".encode_utf16().collect();
+                status = NCryptOpenKey(provider, &mut key_handle, key_name.as_ptr(), 0, 0);
+                if status != 0 {
+                    NCryptFreeObject(provider);
+                    return Err(anyhow!("Failed to open TPM key"));
+                }
+
+                let mut output_size: u32 = 0;
+                status = NCryptDecrypt(
+                    key_handle,
+                    blob.as_ptr(),
+                    blob.len() as u32,
+                    std::ptr::null(),
+                    null_mut(),
+                    0,
+                    &mut output_size,
+                    NCRYPT_PAD_PKCS1_FLAG,
+                );
+
+                if status != 0 {
+                    NCryptFreeObject(key_handle);
+                    NCryptFreeObject(provider);
+                    return Err(anyhow!(
+                        "Failed to get decrypted size ({})",
+                        map_cng_error(status)
+                    ));
+                }
+
+                let mut decrypted = vec![0u8; output_size as usize];
+                status = NCryptDecrypt(
+                    key_handle,
+                    blob.as_ptr(),
+                    blob.len() as u32,
+                    std::ptr::null(),
+                    decrypted.as_mut_ptr(),
+                    decrypted.len() as u32,
+                    &mut output_size,
+                    NCRYPT_PAD_PKCS1_FLAG,
+                );
+
+                NCryptFreeObject(key_handle);
+                NCryptFreeObject(provider);
+
+                if status != 0 {
+                    return Err(anyhow!(
+                        "Failed to decrypt with TPM ({})",
+                        map_cng_error(status)
+                    ));
+                }
+
+                decrypted.truncate(output_size as usize);
+
+                // Verify integrity (SHA256 checksum)
+                if decrypted.len() < 32 {
+                    return Err(anyhow!("Unsealed data too short"));
+                }
+                let checksum = &decrypted[..32];
+                let data = &decrypted[32..];
+
+                use sha2::{Digest, Sha256};
+                let mut hasher = Sha256::new();
+                hasher.update(data);
+                if hasher.finalize().as_slice() != checksum {
+                    return Err(anyhow!("Integrity check failed: Data hash mismatch"));
+                }
+
+                Ok(data.to_vec())
+            }
         }
-        async fn sign_handshake_hash(&self, _hash: &[u8]) -> Result<[u8; 64]> {
-            todo!("Windows CNG identity signature for Noise")
+
+        async fn sign_handshake_hash(&self, hash: &[u8]) -> Result<[u8; 64]> {
+            let sealed = self
+                .sealed_seed
+                .as_ref()
+                .ok_or_else(|| anyhow!("No sealed seed available for signature"))?;
+
+            let mut seed = self.unseal(sealed).await?;
+            let seed_bytes: [u8; 32] = seed
+                .clone()
+                .try_into()
+                .map_err(|_| anyhow!("Invalid seed length"))?;
+
+            use ed25519_dalek::{Signer, SigningKey};
+            let signing_key = SigningKey::from_bytes(&seed_bytes);
+            let signature = signing_key.sign(hash);
+
+            // Zeroize transit memory
+            seed.zeroize();
+            Ok(signature.to_bytes())
         }
-        async fn dh(&self, _remote_public_key: &[u8]) -> Result<[u8; 32]> {
-            todo!("Windows CNG identity DH for Noise")
+
+        async fn dh(&self, remote_public_key: &[u8]) -> Result<[u8; 32]> {
+            let sealed = self
+                .sealed_seed
+                .as_ref()
+                .ok_or_else(|| anyhow!("No sealed seed available for DH"))?;
+
+            let mut seed = self.unseal(sealed).await?;
+            let seed_bytes: [u8; 32] = seed
+                .clone()
+                .try_into()
+                .map_err(|_| anyhow!("Invalid seed length"))?;
+
+            let secret = x25519_dalek::StaticSecret::from(seed_bytes);
+            let remote_pk_bytes: [u8; 32] = remote_public_key
+                .try_into()
+                .map_err(|_| anyhow!("Invalid remote public key length"))?;
+            let remote_pk = x25519_dalek::PublicKey::from(remote_pk_bytes);
+            let shared_secret = secret.diffie_hellman(&remote_pk);
+
+            // Zeroize transit memory
+            seed.zeroize();
+            Ok(shared_secret.to_bytes())
+        }
+
+        fn set_sealed_seed(&mut self, sealed_seed: Vec<u8>) {
+            self.sealed_seed = Some(sealed_seed);
+        }
+
+        fn set_public_key(&mut self, pubkey: Vec<u8>) {
+            self.identity_public_key = Some(pubkey);
         }
 
         async fn generate_quote(&self, _nonce: &[u8]) -> Result<crate::traits::TpmQuote> {
@@ -175,7 +320,7 @@ mod windows_impl {
                 let provider_name: Vec<u16> = "Microsoft Platform Crypto Provider\0"
                     .encode_utf16()
                     .collect();
-                let status = NCryptOpenStorageProvider(&mut provider, provider_name.as_ptr(), 0);
+                let mut status = NCryptOpenStorageProvider(&mut provider, provider_name.as_ptr(), 0);
                 if status != 0 {
                     return Err(anyhow!(
                         "TPM provider not available ({})",
@@ -185,7 +330,7 @@ mod windows_impl {
 
                 let mut key_handle: usize = 0;
                 let key_name: Vec<u16> = "AttestIdentitySRK\0".encode_utf16().collect();
-                let status = NCryptOpenKey(provider, &mut key_handle, key_name.as_ptr(), 0, 0);
+                status = NCryptOpenKey(provider, &mut key_handle, key_name.as_ptr(), 0, 0);
                 if status != 0 {
                     NCryptFreeObject(provider);
                     return Err(anyhow!(
@@ -241,20 +386,37 @@ mod windows_impl {
         }
 
         async fn public_key(&self) -> Result<Vec<u8>> {
+            if let Some(ref pk) = self.identity_public_key {
+                return Ok(pk.clone());
+            }
+
             unsafe {
                 let mut provider: usize = 0;
                 let provider_name: Vec<u16> = "Microsoft Platform Crypto Provider\0"
                     .encode_utf16()
                     .collect();
-                NCryptOpenStorageProvider(&mut provider, provider_name.as_ptr(), 0);
+                let mut status = NCryptOpenStorageProvider(&mut provider, provider_name.as_ptr(), 0);
+                if status != 0 {
+                    return Err(anyhow!(
+                        "TPM provider not available ({})",
+                        map_cng_error(status)
+                    ));
+                }
 
                 let mut key_handle: usize = 0;
                 let key_name: Vec<u16> = "AttestIdentitySRK\0".encode_utf16().collect();
-                NCryptOpenKey(provider, &mut key_handle, key_name.as_ptr(), 0, 0);
+                status = NCryptOpenKey(provider, &mut key_handle, key_name.as_ptr(), 0, 0);
+                if status != 0 {
+                    NCryptFreeObject(provider);
+                    return Err(anyhow!(
+                        "Failed to open TPM identity key ({})",
+                        map_cng_error(status)
+                    ));
+                }
 
                 let mut output_size: u32 = 0;
                 let blob_type: Vec<u16> = "RSAPUBLICBLOB\0".encode_utf16().collect();
-                NCryptExportKey(
+                status = NCryptExportKey(
                     key_handle,
                     0,
                     blob_type.as_ptr(),
@@ -264,9 +426,17 @@ mod windows_impl {
                     &mut output_size,
                     0,
                 );
+                if status != 0 {
+                    NCryptFreeObject(key_handle);
+                    NCryptFreeObject(provider);
+                    return Err(anyhow!(
+                        "Failed to get public key size ({})",
+                        map_cng_error(status)
+                    ));
+                }
 
                 let mut blob = vec![0u8; output_size as usize];
-                NCryptExportKey(
+                status = NCryptExportKey(
                     key_handle,
                     0,
                     blob_type.as_ptr(),
@@ -279,6 +449,12 @@ mod windows_impl {
 
                 NCryptFreeObject(key_handle);
                 NCryptFreeObject(provider);
+                if status != 0 {
+                    return Err(anyhow!(
+                        "Failed to export public key ({})",
+                        map_cng_error(status)
+                    ));
+                }
                 Ok(blob)
             }
         }
@@ -289,16 +465,30 @@ mod windows_impl {
 mod linux_impl {
     use super::*;
 
-    pub struct Tpm2Identity;
+    pub struct Tpm2Identity {
+        pub sealed_seed: Option<Vec<u8>>,
+        pub identity_public_key: Option<Vec<u8>>,
+    }
 
     impl Tpm2Identity {
         pub fn new() -> Result<Self> {
-            Ok(Self)
+            Ok(Self { 
+                sealed_seed: None,
+                identity_public_key: None,
+            })
         }
     }
 
     #[async_trait]
     impl HardwareIdentity for Tpm2Identity {
+        fn set_sealed_seed(&mut self, sealed_seed: Vec<u8>) {
+            self.sealed_seed = Some(sealed_seed);
+        }
+
+        fn set_public_key(&mut self, pubkey: Vec<u8>) {
+            self.identity_public_key = Some(pubkey);
+        }
+
         async fn seal(&self, _label: &str, data: &[u8]) -> Result<Vec<u8>> {
             Ok(data.to_vec())
         }
@@ -319,6 +509,9 @@ mod linux_impl {
             })
         }
         async fn public_key(&self) -> Result<Vec<u8>> {
+            if let Some(ref pk) = self.identity_public_key {
+                return Ok(pk.clone());
+            }
             Ok(Vec::new())
         }
     }
@@ -329,10 +522,21 @@ mod stub_impl {
 
     #[derive(Default)]
     #[allow(dead_code)]
-    pub struct StubIdentity;
+    pub struct StubIdentity {
+        pub sealed_seed: Option<Vec<u8>>,
+        pub identity_public_key: Option<Vec<u8>>,
+    }
 
     #[async_trait]
     impl HardwareIdentity for StubIdentity {
+        fn set_sealed_seed(&mut self, sealed_seed: Vec<u8>) {
+            self.sealed_seed = Some(sealed_seed);
+        }
+
+        fn set_public_key(&mut self, pubkey: Vec<u8>) {
+            self.identity_public_key = Some(pubkey);
+        }
+
         async fn seal(&self, _label: &str, data: &[u8]) -> Result<Vec<u8>> {
             Ok(data.to_vec())
         }
@@ -358,6 +562,9 @@ mod stub_impl {
         }
 
         async fn public_key(&self) -> Result<Vec<u8>> {
+            if let Some(ref pk) = self.identity_public_key {
+                return Ok(pk.clone());
+            }
             Ok(Vec::new())
         }
     }

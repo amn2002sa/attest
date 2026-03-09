@@ -14,5 +14,12 @@
     - [x] Increase Partial Rounds to 22 (Total 30)
     - [x] Re-verify STARK Transition & Diffusion
     - [x] Update Audit Assessment Documentation
+- [x] Phase 11: Singularity Hardware Unblocking
+    - [x] Update `vex-hardware` dependencies (`x25519-dalek` with `static_secrets`)
+    - [x] Implement `NCryptDecrypt` for `unseal`
+    - [x] Implement Temporary Unseal + Dalit Sign/DH
+    - [x] Zeroize memory after crypto operations
+
+- [ ] Phase 9: CHORA Gate Integration
 
 **Overall Status: 100% COMPLETED | VEX V1.0 HARDENED** 🛡️🚀⚓

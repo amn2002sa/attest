@@ -1,4 +1,4 @@
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{SigningKey, Signer, Signature};
 use provn_sdk::{sign_claim, Claim};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -17,6 +17,7 @@ pub struct AttestAgent {
     pub signing_key: SigningKey,
     #[zeroize(skip)]
     pub id: String, // aid:ed25519:<hex_pubkey>
+    pub sealed_seed: Option<Vec<u8>>,
 }
 
 impl AttestAgent {
@@ -27,7 +28,11 @@ impl AttestAgent {
             hex::encode(signing_key.verifying_key().to_bytes())
         );
 
-        Self { signing_key, id }
+        Self {
+            signing_key,
+            id,
+            sealed_seed: None,
+        }
     }
 
     /// Restore an identity from a raw 32-byte seed
@@ -38,7 +43,17 @@ impl AttestAgent {
             "aid:ed25519:{}",
             hex::encode(signing_key.verifying_key().to_bytes())
         );
-        Self { signing_key, id }
+        Self {
+            signing_key,
+            id,
+            sealed_seed: None,
+        }
+    }
+
+    /// Attach a sealed seed to this agent for TPM-bound operations
+    pub fn with_sealed_seed(mut self, sealed_seed: Vec<u8>) -> Self {
+        self.sealed_seed = Some(sealed_seed);
+        self
     }
 
     /// Derives a VEX-compatible Uuid from the agent's public key
@@ -53,6 +68,11 @@ impl AttestAgent {
     pub fn sign_claim(&self, data: String) -> provn_sdk::SignedClaim {
         let claim = Claim::new(data);
         sign_claim(&claim, &self.signing_key).expect("Ecosystem signing failure")
+    }
+
+    /// Sign data returning a standard ed25519_dalek::Signature
+    pub fn sign(&self, data: &[u8]) -> Signature {
+        self.signing_key.sign(data)
     }
 }
 

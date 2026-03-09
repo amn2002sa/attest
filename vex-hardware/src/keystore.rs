@@ -130,7 +130,7 @@ impl KeyManager {
             .map_err(|_| anyhow!("Decryption failed: Invalid password or corrupted file"))?;
 
         // 3. TPM Multi-Factor (Hardware Sealing)
-        let seed: [u8; 32] = if let Some(tpm_blobs) = store.tpm_blobs {
+        let (seed, sealed_seed): ([u8; 32], Option<Vec<u8>>) = if let Some(tpm_blobs) = store.tpm_blobs {
             let provider = crate::tpm::create_identity_provider(true);
             let private = base64::decode(tpm_blobs.private).context("Invalid TPM private blob")?;
             // public blob is ignored in new trait model (CNG doesn't need it for persisted keys)
@@ -138,20 +138,26 @@ impl KeyManager {
             let unsealed_data = provider.unseal(&private).await?;
 
             // Unsealed data is the seed
-            unsealed_data
+            let seed = unsealed_data
                 .try_into()
-                .map_err(|_| anyhow!("Invalid unsealed seed length"))?
+                .map_err(|_| anyhow!("Invalid unsealed seed length"))?;
+            (seed, Some(private))
         } else {
-            plaintext
+            let seed = plaintext
                 .as_slice()
                 .try_into()
-                .map_err(|_| anyhow!("Invalid key length"))?
+                .map_err(|_| anyhow!("Invalid key length"))?;
+            (seed, None)
         };
 
         // Zeroize plaintext after use
         plaintext.zeroize();
 
-        Ok(AttestAgent::from_seed(seed))
+        let mut agent = AttestAgent::from_seed(seed);
+        if let Some(ss) = sealed_seed {
+            agent = agent.with_sealed_seed(ss);
+        }
+        Ok(agent)
     }
 
     /// Save an agent's identity to disk with optional TPM protection.
