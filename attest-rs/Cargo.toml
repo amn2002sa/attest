@@ -49,8 +49,8 @@ ring = "0.17"
 # Environmental Monitoring
 notify = "6"
 
-# Ecosystem Alignment (Local Paths)
-vex-hardware = { path = "../../vex/crates/vex-hardware" }
+# Ecosystem Alignment (Git-based for Docker/Railway)
+vex-hardware = { git = "https://github.com/provnai/vex" }
 vex-core = { git = "https://github.com/provnai/vex" }
 vex-anchor = { git = "https://github.com/provnai/vex" }
 provn-sdk = { git = "https://github.com/provnai/provn-sdk" }
