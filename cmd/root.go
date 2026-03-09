@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/provnai/attest/pkg/storage"
 )
 
 type Config struct {
@@ -27,12 +29,25 @@ var (
 func initConfig() {
 	v := setupViper()
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "."
+	if configFile != "" {
+		v.SetConfigFile(configFile)
+	} else {
+		home, _ := os.UserHomeDir()
+		v.AddConfigPath(filepath.Join(home, ".attest"))
+		v.AddConfigPath(".")
+		v.SetConfigName("attest")
+		v.SetConfigType("yaml")
 	}
+
+	if err := v.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			fmt.Printf("Warning: failed to read config file: %v\n", err)
+		}
+	}
+
 	dataDir = v.GetString("data_dir")
 	if dataDir == "" {
+		home, _ := os.UserHomeDir()
 		dataDir = filepath.Join(home, ".attest")
 	}
 	dataDir = os.ExpandEnv(dataDir)
@@ -42,6 +57,15 @@ func initConfig() {
 		DataDir:   dataDir,
 		BackupDir: filepath.Join(dataDir, "backups"),
 		Verbose:   verbose,
+	}
+
+	// Auto-migrate database
+	db, err := storage.NewDB(cfg.DBPath)
+	if err == nil {
+		if err := db.Migrate(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Database migration failed: %v\n", err)
+		}
+		db.Close()
 	}
 }
 

@@ -40,7 +40,11 @@ rpassword = "7.0"
 reqwest = { version = "0.11", features = ["json"] }
 
 # Storage (Ecosystem Aligned)
-sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "chrono", "uuid"] }
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite", "chrono", "uuid"] }
+# Cryptography & Tunneling
+snow = "0.9"
+serde_jcs = "0.1"
+ring = "0.17"
 
 # Environmental Monitoring
 notify = "6"
@@ -58,6 +62,7 @@ p3-field = "0.4.2"
 p3-matrix = "0.4.2"
 p3-goldilocks = "0.4.2"
 p3-poseidon = "0.4.2"
+p3-poseidon2 = "0.4.2"
 p3-merkle-tree = "0.4.2"
 p3-fri = "0.4.2"
 p3-challenger = "0.4.2"

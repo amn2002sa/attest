@@ -15,8 +15,9 @@ pub use id::AttestAgent;
 pub use keystore::KeyManager;
 pub use persist::audit::{ActorType, AuditEvent, AuditEventType, AuditStore};
 pub use persist::sqlite::LocalStore;
+pub use runtime::intent::{Intent, IntentStatus};
 pub use runtime::interceptor::AttestTerminalInterceptor;
-pub use runtime::policy::{Policy, PolicyEngine};
+pub use runtime::policy::{ActionContext, Policy, PolicyEngine};
 pub use runtime::watcher::AttestWatcher;
 
 pub mod config;

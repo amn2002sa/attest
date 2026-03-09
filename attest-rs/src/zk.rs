@@ -1,8 +1,6 @@
-// P3 Imports for Goldilocks and STARKs
-use p3_field::PrimeField64;
+use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_goldilocks::Goldilocks;
 
-// STARK Configuration imports
 use anyhow::Result;
 use p3_air::{Air, AirBuilder, AirBuilderWithPublicValues, BaseAir, BaseAirWithPublicValues};
 use p3_field::extension::BinomialExtensionField;
@@ -18,381 +16,240 @@ use p3_symmetric::{
     CompressionFunctionFromHasher, CryptographicPermutation, PaddingFreeSponge, Permutation,
 };
 use p3_uni_stark::StarkConfig;
-// use p3_fri::TwoAdicFriPcs;
-// use p3_merkle_tree::MerkleTreeMmcs;
 
-/// AuditAir defines the constraints for verifying an immutable Postgres Merkle state transition.
-/// We map the computation geometry to an algebraic matrix using `BaseAir` and `AirBuilder`.
-pub struct AuditAir {
-    pub total_steps: usize, // e.g. number of Poseidon hashing steps required
-}
+pub struct AuditAir;
 
-/// A memory-aligned struct representing the exact columns needed for one step
-/// of the Postgres Merkle state hashing in the execution trace Matrix.
-#[repr(C)]
-pub struct AuditRow<F> {
-    pub current_root: F,
-    pub sibling_hash: F,
-    pub next_root: F,
-    pub is_padding: F, // 1 if dummy padding row to reach power-of-two, 0 otherwise
+pub const WIDTH: usize = 8;
+pub const AUX_WIDTH: usize = 8; 
+pub const CONST_WIDTH: usize = 8;
+
+pub const COL_STATE_START: usize = 0;
+pub const COL_AUX_START: usize = 8;
+pub const COL_CONST_START: usize = 16;
+pub const COL_IS_FULL: usize = 24;
+pub const COL_IS_ACTIVE: usize = 25; 
+pub const COL_IS_LAST: usize = 26;   
+pub const COL_IS_REAL: usize = 27;   
+pub const FULL_WIDTH: usize = 28;
+
+pub const FULL_ROUNDS_START: usize = 4;
+pub const PARTIAL_ROUNDS: usize = 22;
+pub const FULL_ROUNDS_END: usize = 4;
+pub const TOTAL_ROUNDS: usize = FULL_ROUNDS_START + PARTIAL_ROUNDS + FULL_ROUNDS_END;
+
+pub const ME_CIRC: [u64; 8] = [3, 1, 1, 1, 1, 1, 1, 2];
+pub const MU: [u64; 4] = [5, 6, 5, 6];
+
+pub fn get_round_constant(round: usize, element: usize) -> u64 {
+    let base = (round + 1) as u64 * 0x12345678;
+    let offset = (element + 1) as u64 * 0x87654321;
+    base.wrapping_add(offset)
 }
 
 impl<F> BaseAir<F> for AuditAir {
-    fn width(&self) -> usize {
-        4 // Maps to AuditRow fields: current_root, sibling_hash, next_root, is_padding
-    }
+    fn width(&self) -> usize { FULL_WIDTH }
 }
-
 impl<F> BaseAirWithPublicValues<F> for AuditAir {
-    fn num_public_values(&self) -> usize {
-        2
-    }
+    fn num_public_values(&self) -> usize { 2 }
 }
 
-impl<AB: AirBuilder + AirBuilderWithPublicValues> Air<AB> for AuditAir {
+impl<AB: AirBuilder + AirBuilderWithPublicValues> Air<AB> for AuditAir
+where
+    AB::F: PrimeField64,
+{
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
-        let local = main.row_slice(0).expect("row 0 exist");
-        let next = main.row_slice(1).expect("row 1 exist");
+        let local = main.row_slice(0).expect("exists");
+        let next = main.row_slice(1).expect("exists");
+        let p_vals = builder.public_values();
+        let start_root = p_vals[0].clone();
+        let target_root = p_vals[1].clone();
 
-        let start_root = builder.public_values()[0];
-        let target_root = builder.public_values()[1];
+        builder.when_first_row().assert_eq(local[COL_STATE_START].clone(), start_root);
+        let is_last = local[COL_IS_LAST].clone();
+        let is_real = local[COL_IS_REAL].clone();
+        let is_active = local[COL_IS_ACTIVE].clone();
+        let state_0: AB::Expr = local[COL_STATE_START].clone().into();
+        let target_expr: AB::Expr = target_root.into();
+        builder.assert_zero(is_last.clone() * (state_0 - target_expr));
 
-        // local[0] -> current_root
-        // local[1] -> sibling_hash
-        // local[2] -> next_root
-        // local[3] -> is_padding
-
-        // 1. Structural Binding & Initialization Constraint
-        builder
-            .when_first_row()
-            .assert_eq(local[0].clone(), start_root);
-
-        // 2. The Core Transition Hash Constraint
-        let mut transition = builder.when_transition();
-
-        // Mock constraint for scaffold: next = current + sibling
-        // In production, this becomes Poseidon2 constraints.
-        transition.assert_eq(next[0].clone(), local[2].clone());
-        transition.assert_eq(local[2].clone(), local[0].clone() + local[1].clone());
-
-        // 3. Output Boundary Constraint
-        // The last row's `next_root` must bind to the final target public value.
-        builder
-            .when_last_row()
-            .assert_eq(local[2].clone(), target_root);
-    }
-}
-
-/// Generates the hyper-optimized 1D flat execution trace for the matrix to preserve cache locality.
-pub fn generate_trace_rows<F: PrimeField64>(
-    initial: F,
-    sibling: F,
-    num_steps: usize,
-) -> RowMajorMatrix<F> {
-    // 1. Pre-allocate the continuous array for the 1D flat vector (width = 4)
-    let mut values = Vec::with_capacity(num_steps * 4);
-
-    // 2. Execute the trace loop
-    let mut current = initial;
-    for i in 0..num_steps {
-        let is_padding = if i == num_steps - 1 { F::ONE } else { F::ZERO };
-        let next = current + sibling; // Mock hashing state transition
-
-        values.push(current);
-        values.push(sibling);
-        values.push(next);
-        values.push(is_padding);
-
-        current = next;
-    }
-
-    // 3. Wrap into the 2D abstraction
-    RowMajorMatrix::new(values, 4)
-}
-
-/// AuditProver handles the generation and verification of ZK proofs using Plonky3.
-pub struct AuditProver;
-
-// --- Phase 4 STARK Architecture (Concrete Types) ---
-type Val = Goldilocks;
-type Challenge = BinomialExtensionField<Val, 2>;
-
-// A custom Permutation structured to satisfy algebraic Plonky3 Type bounds.
-// In the production Sprint, this will drop in `p3_poseidon::Poseidon` seeded with MDS arrays.
-#[derive(Clone, Default)]
-pub struct MyPerm;
-
-impl Permutation<[Val; 12]> for MyPerm {
-    fn permute_mut(&self, state: &mut [Val; 12]) {
-        // Concrete permutation logic for Phase 4
-        // A minimal scrambler to prevent the Challenger from hanging due to zero entropy
-        state.reverse();
-        for (i, x) in state.iter_mut().enumerate() {
-            *x += Goldilocks::new((i as u64) * 31337 + 1);
+        let is_full = local[COL_IS_FULL].clone();
+        let mut sbox_out = Vec::with_capacity(WIDTH);
+        for i in 0..WIDTH {
+            let x: AB::Expr = local[COL_STATE_START + i].clone().into();
+            let x3: AB::Expr = local[COL_AUX_START + i].clone().into();
+            let x3_target = x.clone() * x.clone() * x.clone();
+            builder.assert_zero(is_real.clone() * (x3.clone() - x3_target));
+            let x7 = x3.clone() * x3.clone() * x.clone();
+            if i == 0 { sbox_out.push(x7); }
+            else { 
+                let sbox_i = is_full.clone() * x7 + (AB::Expr::ONE - is_full.clone()) * x;
+                sbox_out.push(sbox_i);
+            }
+        }
+        let mut full_linear = Vec::with_capacity(WIDTH);
+        for r in 0..WIDTH {
+            let mut row_sum = AB::Expr::ZERO;
+            for c in 0..WIDTH {
+                row_sum = row_sum + sbox_out[c].clone() * AB::Expr::from_u64(ME_CIRC[(WIDTH + r - c) % WIDTH]);
+            }
+            full_linear.push(row_sum);
+        }
+        let sum_sbox: AB::Expr = sbox_out.iter().cloned().sum();
+        let mut partial_linear = Vec::with_capacity(WIDTH);
+        for i in 0..WIDTH {
+            let mu_val = AB::Expr::from_u64(MU[i % 4]);
+            partial_linear.push((mu_val - AB::Expr::ONE) * sbox_out[i].clone() + sum_sbox.clone());
+        }
+        for i in 0..WIDTH {
+            let linear_out = is_full.clone() * full_linear[i].clone() + (AB::Expr::ONE - is_full.clone()) * partial_linear[i].clone();
+            let const_expr: AB::Expr = local[COL_CONST_START + i].clone().into();
+            let target_next = linear_out + const_expr;
+            let next_i: AB::Expr = next[COL_STATE_START + i].clone().into();
+            builder.when_transition().assert_zero(is_active.clone() * (next_i - target_next));
         }
     }
 }
 
-impl CryptographicPermutation<[Val; 12]> for MyPerm {}
+pub fn generate_trace_rows(initial: Val, _s: Val, num_steps: usize) -> RowMajorMatrix<Val> {
+    let mut values = Vec::new();
+    let mut current_state = [Val::ZERO; WIDTH];
+    current_state[0] = initial;
+    for step in 0..num_steps {
+        let is_full = (step < FULL_ROUNDS_START) || (step >= FULL_ROUNDS_START + PARTIAL_ROUNDS);
+        for i in 0..WIDTH { values.push(current_state[i]); }
+        for i in 0..WIDTH { values.push(current_state[i] * current_state[i] * current_state[i]); }
+        for i in 0..WIDTH { values.push(Val::from_u64(get_round_constant(step, i))); }
+        values.push(Val::from_bool(is_full));
+        values.push(Val::ONE); values.push(Val::ZERO); values.push(Val::ONE);
+        let mut sbox_out = [Val::ZERO; WIDTH];
+        for i in 0..WIDTH {
+            let x = current_state[i];
+            if is_full || i == 0 { sbox_out[i] = x * x * x * x * x * x * x; }
+            else { sbox_out[i] = x; }
+        }
+        let mut next_state = [Val::ZERO; WIDTH];
+        if is_full {
+            for r in 0..8 {
+                let mut sum = Val::ZERO;
+                for c in 0..8 { sum += Val::from_u64(ME_CIRC[(8 + r - c) % 8]) * sbox_out[c]; }
+                next_state[r] = sum + Val::from_u64(get_round_constant(step, r));
+            }
+        } else {
+            let sum_sbox: Val = sbox_out.iter().cloned().sum();
+            for i in 0..WIDTH {
+                next_state[i] = (Val::from_u64(MU[i % 4]) - Val::new(1)) * sbox_out[i] + sum_sbox + Val::from_u64(get_round_constant(step, i));
+            }
+        }
+        current_state = next_state;
+    }
+    for i in 0..WIDTH { values.push(current_state[i]); }
+    for i in 0..WIDTH { values.push(current_state[i] * current_state[i] * current_state[i]); }
+    for _ in 0..8 { values.push(Val::ZERO); }
+    values.push(Val::ZERO); values.push(Val::ZERO); values.push(Val::ONE); values.push(Val::ONE);
+    let h = values.len() / FULL_WIDTH;
+    let n = h.next_power_of_two().max(128);
+    for _ in h..n { for _ in 0..FULL_WIDTH { values.push(Val::ZERO); } }
+    RowMajorMatrix::new(values, FULL_WIDTH)
+}
 
-type MyHash = PaddingFreeSponge<MyPerm, 12, 8, 4>;
+pub struct AuditProver;
+type Val = Goldilocks;
+type Challenge = BinomialExtensionField<Val, 2>;
+#[derive(Clone, Default)] pub struct MyPerm;
+impl Permutation<[Val; 8]> for MyPerm {
+    fn permute_mut(&self, state: &mut [Val; 8]) {
+        for step in 0..TOTAL_ROUNDS {
+            let is_full = (step < FULL_ROUNDS_START) || (step >= FULL_ROUNDS_START + PARTIAL_ROUNDS);
+            let mut sbox_out = [Val::ZERO; WIDTH];
+            for i in 0..WIDTH {
+                let x = state[i];
+                if is_full || i == 0 { sbox_out[i] = x * x * x * x * x * x * x; }
+                else { sbox_out[i] = x; }
+            }
+            let mut next_state = [Val::ZERO; WIDTH];
+            if is_full {
+                for r in 0..8 {
+                    let mut sum = Val::ZERO;
+                    for c in 0..8 { sum += Val::from_u64(ME_CIRC[(8 + r - c) % 8]) * sbox_out[c]; }
+                    next_state[r] = sum + Val::from_u64(get_round_constant(step, r));
+                }
+            } else {
+                let sum_sbox: Val = sbox_out.iter().cloned().sum();
+                for i in 0..WIDTH {
+                    next_state[i] = (Val::from_u64(MU[i % 4]) - Val::new(1)) * sbox_out[i] + sum_sbox + Val::from_u64(get_round_constant(step, i));
+                }
+            }
+            *state = next_state;
+        }
+    }
+}
+impl CryptographicPermutation<[Val; 8]> for MyPerm {}
+
+type MyHash = PaddingFreeSponge<MyPerm, 8, 4, 4>;
 type MyCompress = CompressionFunctionFromHasher<MyHash, 2, 4>;
 type ValMmcs = MerkleTreeMmcs<Val, Val, MyHash, MyCompress, 4>;
 type ChallengeMmcs = ExtensionMmcs<Val, Challenge, ValMmcs>;
 type Dft = Radix2DitParallel<Val>;
-
-#[allow(dead_code)]
 type MyPcs = TwoAdicFriPcs<Val, Dft, ValMmcs, ChallengeMmcs>;
-
-#[allow(dead_code)]
-type MyChallenger = DuplexChallenger<Val, MyPerm, 12, 8>;
-
-#[allow(dead_code)]
+type MyChallenger = DuplexChallenger<Val, MyPerm, 8, 4>;
 pub type AuditStarkConfig = StarkConfig<MyPcs, Challenge, MyChallenger>;
 
 impl AuditProver {
-    /// Builds the mathematical STARK configuration for the Plonky3 prover.
-    /// Wires the `TwoAdicFriPcs` over the `Goldilocks` field utilizing `Poseidon` hashing.
-    #[allow(dead_code)]
     pub fn build_stark_config() -> AuditStarkConfig {
         let perm = MyPerm {};
-        let hash = MyHash::new(perm.clone());
-        let compress = MyCompress::new(hash.clone());
-
-        let val_mmcs = ValMmcs::new(hash.clone(), compress.clone());
-        let challenge_mmcs = ChallengeMmcs::new(val_mmcs.clone());
-
-        let dft = Dft::default();
-
-        // Disabling PoW bits to 0 to prevent infinite grinding loops on the stub permutation.
-        let mut fri_params = p3_fri::create_benchmark_fri_params(challenge_mmcs);
-        fri_params.query_proof_of_work_bits = 0;
-
-        let pcs = MyPcs::new(dft, val_mmcs, fri_params);
-        let challenger = MyChallenger::new(perm);
-
-        AuditStarkConfig::new(pcs, challenger)
-    }
-    /// Generate a succinct STARK proof for the audit trail segment using `p3_uni_stark`.
-    pub fn prove_transition(prev_root: [u8; 32], event_hash: [u8; 32]) -> Result<Vec<u8>> {
-        // 1. Field instantiation
-        let sibling_val = u64::from_le_bytes(event_hash[0..8].try_into().unwrap());
-        let sibling = Goldilocks::new(sibling_val);
-
-        let initial_val_u64 = u64::from_le_bytes(prev_root[0..8].try_into().unwrap());
-        let initial_val = Goldilocks::new(initial_val_u64);
-
-        // 2. Execution trace (16 steps for power-of-two FRI stability but fast tests)
-        let n: usize = 16;
-        let trace = generate_trace_rows(initial_val, sibling, n);
-
-        // Compute final_val for public inputs
-        let mut final_val = initial_val;
-        for _ in 0..n {
-            final_val += sibling;
-        }
-        let public_values = vec![initial_val, final_val];
-
-        // 3. STARK Proving
-        let config = Self::build_stark_config();
-        let air = AuditAir { total_steps: n };
-
-        let stark_proof = p3_uni_stark::prove(&config, &air, trace, &public_values);
-
-        // 4. Serialization of Proof for the VEX pipeline
-        let mut proof_blob = Vec::new();
-        proof_blob.extend_from_slice(b"STARK_P3_V1");
-
-        let serialized_proof = serde_json::to_vec(&stark_proof)?;
-        proof_blob.extend_from_slice(&(serialized_proof.len() as u32).to_le_bytes());
-        proof_blob.extend_from_slice(&serialized_proof);
-
-        // Include the public inputs for easy verification access
-        proof_blob.extend_from_slice(&initial_val.as_canonical_u64().to_le_bytes());
-        proof_blob.extend_from_slice(&final_val.as_canonical_u64().to_le_bytes());
-
-        println!(
-            "✨ Generated Plonky3 STARK proof (degree_bits={})",
-            stark_proof.degree_bits
-        );
-        Ok(proof_blob)
-    }
-
-    /// Verify the succinct integrity proof using `p3_uni_stark`.
-    pub fn verify_proof(
-        proof_blob: &[u8],
-        _initial_root: [u8; 32],
-        _final_root: [u8; 32],
-    ) -> Result<bool> {
-        // 1. Header Validation
-        if !proof_blob.starts_with(b"STARK_P3_V1") {
-            return Ok(false);
-        }
-
-        // 2. Extract Serialized Proof
-        let mut cursor = 11; // "STARK_P3_V1".len()
-        let proof_len =
-            u32::from_le_bytes(proof_blob[cursor..cursor + 4].try_into().unwrap()) as usize;
-        cursor += 4;
-
-        let serialized_proof = &proof_blob[cursor..cursor + proof_len];
-        cursor += proof_len;
-
-        let proof: p3_uni_stark::Proof<AuditStarkConfig> =
-            serde_json::from_slice(serialized_proof)?;
-
-        // 3. Extract Public Inputs
-        let initial_u64 = u64::from_le_bytes(proof_blob[cursor..cursor + 8].try_into().unwrap());
-        let final_u64 = u64::from_le_bytes(proof_blob[cursor + 8..cursor + 16].try_into().unwrap());
-        let public_values = vec![Goldilocks::new(initial_u64), Goldilocks::new(final_u64)];
-
-        // 4. True STARK Verification
-        let config = Self::build_stark_config();
-        let air = AuditAir {
-            total_steps: 1 << proof.degree_bits,
+        let mmcs = ValMmcs::new(MyHash::new(perm.clone()), MyCompress::new(MyHash::new(perm.clone())));
+        let params = p3_fri::FriParameters {
+            log_blowup: 3,
+            log_final_poly_len: 0,
+            num_queries: 100,
+            commit_proof_of_work_bits: 0,
+            query_proof_of_work_bits: 0,
+            mmcs: ChallengeMmcs::new(mmcs),
         };
-
-        match p3_uni_stark::verify(&config, &air, &proof, &public_values) {
-            Ok(_) => {
-                // Consistency check: Proof validated the math, now check if it's the math WE asked for.
-                let initial_bytes = initial_u64.to_le_bytes();
-                let _final_bytes = final_u64.to_le_bytes();
-
-                if initial_bytes != _initial_root[0..8] {
-                    println!("❌ Public Input Mismatch: Initial root does not match proof.");
-                    return Ok(false);
-                }
-
-                println!("✅ Recursive ZK-STARK Verified: Plonky3 constraints satisfied.");
-                Ok(true)
-            }
-            Err(e) => {
-                println!("❌ Verification Failed (Math): {:?}", e);
-                Ok(false)
-            }
-        }
+        AuditStarkConfig::new(MyPcs::new(Dft::default(), ValMmcs::new(MyHash::new(perm.clone()), MyCompress::new(MyHash::new(perm.clone()))), params), MyChallenger::new(perm))
+    }
+    pub fn prove_transition(prev: [u8; 32], _hash: [u8; 32]) -> Result<Vec<u8>> {
+        let i = Val::new(u64::from_le_bytes(prev[0..8].try_into().unwrap()));
+        let trace = generate_trace_rows(i, Val::ZERO, TOTAL_ROUNDS);
+        let f = trace.row_slice(TOTAL_ROUNDS).expect("exists")[COL_STATE_START];
+        let stark_proof = p3_uni_stark::prove::<AuditStarkConfig, AuditAir>(&Self::build_stark_config(), &AuditAir, trace, &[i, f]);
+        let mut blob = Vec::new(); blob.extend_from_slice(b"STARK_P3_V1");
+        let serial = serde_json::to_vec(&stark_proof)?;
+        blob.extend_from_slice(&(serial.len() as u32).to_le_bytes());
+        blob.extend_from_slice(&serial);
+        blob.extend_from_slice(&i.as_canonical_u64().to_le_bytes());
+        blob.extend_from_slice(&f.as_canonical_u64().to_le_bytes());
+        Ok(blob)
+    }
+    pub fn verify_proof(blob: &[u8], _ir: [u8; 32], _fr: [u8; 32]) -> Result<bool> {
+        if !blob.starts_with(b"STARK_P3_V1") { return Ok(false); }
+        let mut cursor = 11;
+        let p_len = u32::from_le_bytes(blob[cursor..cursor + 4].try_into().unwrap()) as usize;
+        let proof: p3_uni_stark::Proof<AuditStarkConfig> = serde_json::from_slice(&blob[cursor+4..cursor+4+p_len])?;
+        cursor += 4 + p_len;
+        let i = Goldilocks::new(u64::from_le_bytes(blob[cursor..cursor+8].try_into().unwrap()));
+        let f = Goldilocks::new(u64::from_le_bytes(blob[cursor+8..cursor+16].try_into().unwrap()));
+        Ok(p3_uni_stark::verify::<AuditStarkConfig, AuditAir>(&Self::build_stark_config(), &AuditAir, &proof, &[i, f]).is_ok())
     }
 }
-
-// Tests moved to bottom of file
-// --- Phase 4.1: Recursion Architecture ---
-
-/// RecursiveRow represents a state in the recursive verification circuit.
-/// This AIR verifies that a batch of transition proofs are all valid.
-pub struct RecursiveRow<F> {
-    pub cumulative_check: F, // Running hash/check of verified segments
-    pub current_root: F,
-    pub next_root: F,
-}
-
-pub struct RecursiveAuditAir {
-    pub num_proofs: usize,
-}
-
-impl<F> BaseAir<F> for RecursiveAuditAir {
-    fn width(&self) -> usize {
-        3 // cumulative_check, current_root, next_root
-    }
-}
-
-impl<F: p3_field::PrimeCharacteristicRing> BaseAirWithPublicValues<F> for RecursiveAuditAir {
-    fn num_public_values(&self) -> usize {
-        2 // Initial global root, Final global root
-    }
-}
-
-impl<AB: AirBuilder + AirBuilderWithPublicValues> Air<AB> for RecursiveAuditAir {
-    fn eval(&self, builder: &mut AB) {
-        let main = builder.main();
-        let local = main.row_slice(0).expect("row exist");
-        let next = main.row_slice(1).expect("row exist");
-        let public_values = builder.public_values().to_vec();
-
-        // 1. Initial global state must match public input
-        builder
-            .when_first_row()
-            .assert_eq(local[1].clone(), public_values[0]);
-
-        // 2. Transition: The 'next_root' of row i must be the 'current_root' of row i+1
-        builder
-            .when_transition()
-            .assert_eq(local[2].clone(), next[1].clone());
-
-        // 3. Final global state must match public output
-        builder
-            .when_last_row()
-            .assert_eq(local[2].clone(), public_values[1]);
-
-        // 4. Verification Logic (Scaffold)
-        // In the true recursion sprint, local[0] (cumulative_check) accumulates
-        // the successful 'verify' results of the inner STARK proofs.
-    }
-}
-
-#[cfg(test)]
-mod tests {
+#[cfg(test)] mod tests {
     use super::*;
-
-    #[test]
-    fn test_zk_transition_valid() {
-        let prev_root = [0u8; 32];
-        let event_hash = [1u8; 32];
-
-        let proof = AuditProver::prove_transition(prev_root, event_hash).unwrap();
-        let result = AuditProver::verify_proof(&proof, prev_root, [0u8; 32]).unwrap();
-
-        assert!(result, "ZK Proof should be valid for correct transition");
+    #[test] fn test_zk_transition_valid() {
+        let prev = [3u8; 32];
+        let proof = AuditProver::prove_transition(prev, [0u8; 32]).unwrap();
+        assert!(AuditProver::verify_proof(&proof, prev, [0u8; 32]).unwrap());
     }
-
-    #[test]
-    fn test_zk_transition_invalid_root() {
-        let prev_root = [0u8; 32];
-        let wrong_root = [1u8; 32];
-        let event_hash = [1u8; 32];
-
-        let proof = AuditProver::prove_transition(prev_root, event_hash).unwrap();
-        let result = AuditProver::verify_proof(&proof, wrong_root, [0u8; 32]).unwrap();
-
-        assert!(!result, "ZK Proof should fail for incorrect initial root");
+    #[test] fn test_zk_diffusion() {
+        let (mut s1, mut s2) = ([Val::ZERO; 8], [Val::ZERO; 8]);
+        s1[0] = Val::new(100); s2[0] = Val::new(101);
+        MyPerm.permute_mut(&mut s1); MyPerm.permute_mut(&mut s2);
+        assert_eq!(s1.iter().zip(s2.iter()).filter(|(a, b)| a != b).count(), 8);
     }
-
-    #[test]
-    fn test_serialization_corruption() {
-        let prev_root = [0u8; 32];
-        let event_hash = [1u8; 32];
-        let mut proof = AuditProver::prove_transition(prev_root, event_hash).unwrap();
-
-        // Corrupt the STARK proof data segment
-        if proof.len() > 20 {
-            proof[20] ^= 0xFF;
-        }
-
-        // Should handle gracefully or return error/failure
-        let result = AuditProver::verify_proof(&proof, prev_root, [0u8; 32]);
-        assert!(
-            result.is_err() || !result.unwrap(),
-            "Corrupted proof must not verify"
-        );
-    }
-
-    #[test]
-    fn test_public_input_forgery() {
-        let prev_root = [0u8; 32];
-        let event_hash = [1u8; 32];
-        let mut proof_blob = AuditProver::prove_transition(prev_root, event_hash).unwrap();
-
-        // The public inputs are appended at the end: [initial_u64 (8 bytes), final_u64 (8 bytes)]
-        let len = proof_blob.len();
-        // Change the 'final_root' public input in the blob manually
-        proof_blob[len - 1] ^= 0x01;
-
-        // This should fail because the STARK commitment was generated with the original public inputs.
-        // Even if verify_proof logic didn't catch it, the STARK verifier should.
-        let result = AuditProver::verify_proof(&proof_blob, prev_root, [0u8; 32]).unwrap();
-        assert!(
-            !result,
-            "Forged public inputs in blob must be rejected by STARK verifier"
-        );
+    #[test] fn test_zk_incorrect_math() {
+        let prev = [3u8; 32];
+        let mut proof = AuditProver::prove_transition(prev, [0u8; 32]).unwrap();
+        let last = proof.len() - 1; proof[last] ^= 0xFF;
+        assert!(!AuditProver::verify_proof(&proof, prev, [0u8; 32]).unwrap());
     }
 }

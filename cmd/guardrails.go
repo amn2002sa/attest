@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -17,6 +18,16 @@ var guardrailsCmd = &cobra.Command{
 
 Provides policy enforcement, checkpoint creation, and automatic rollback
 capabilities to prevent disasters during command execution.`,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		manager := guardrails.GetGlobalManager()
+		storageDir := filepath.Join(cfg.DataDir, "checkpoints")
+		if manager.GetConfig().StorageDir != storageDir {
+			config := manager.GetConfig()
+			config.StorageDir = storageDir
+			manager.SetConfig(config)
+		}
+		return nil
+	},
 }
 
 var guardrailsEnableCmd = &cobra.Command{
@@ -25,7 +36,9 @@ var guardrailsEnableCmd = &cobra.Command{
 	Long:  "Enable the guardrails safety system for all command executions.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		manager := guardrails.GetGlobalManager()
-		manager.SetEnabled(true)
+		if err := manager.SetEnabled(true); err != nil {
+			return fmt.Errorf("failed to enable guardrails: %w", err)
+		}
 
 		green := color.New(color.FgGreen).SprintFunc()
 		fmt.Printf("%s Guardrails enabled\n", green("✓"))
@@ -40,7 +53,9 @@ var guardrailsDisableCmd = &cobra.Command{
 	Long:  "Disable the guardrails safety system (use with caution!).",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		manager := guardrails.GetGlobalManager()
-		manager.SetEnabled(false)
+		if err := manager.SetEnabled(false); err != nil {
+			return fmt.Errorf("failed to disable guardrails: %w", err)
+		}
 
 		yellow := color.New(color.FgYellow).SprintFunc()
 		fmt.Printf("%s Guardrails disabled - proceed with caution!\n", yellow("⚠"))

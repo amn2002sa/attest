@@ -2,6 +2,7 @@ package guardrails
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -82,16 +83,23 @@ func (r *PolicyRegistry) Disable(id string) error {
 }
 
 // LoadConfiguration loads policy configuration from a config file
-func (r *PolicyRegistry) LoadConfiguration(configPath string) error {
-	// This would load from a YAML/JSON config file
-	// For now, we'll use defaults
-	return nil
+func (m *GuardrailsManager) LoadConfiguration() error {
+	configPath := filepath.Join(m.config.StorageDir, "config.json")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, m.config)
 }
 
 // SaveConfiguration saves policy configuration to a file
-func (r *PolicyRegistry) SaveConfiguration(configPath string) error {
-	// This would save to a YAML/JSON config file
-	return nil
+func (m *GuardrailsManager) SaveConfiguration() error {
+	configPath := filepath.Join(m.config.StorageDir, "config.json")
+	data, err := json.MarshalIndent(m.config, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(configPath, data, 0644)
 }
 
 // GuardrailsManager provides a high-level interface for the guardrails system
@@ -113,13 +121,25 @@ type GuardrailsConfig struct {
 // DefaultConfig returns the default guardrails configuration
 func DefaultConfig() *GuardrailsConfig {
 	homeDir, _ := os.UserHomeDir()
-	return &GuardrailsConfig{
+	storageDir := filepath.Join(homeDir, ".attest", "checkpoints")
+	
+	config := &GuardrailsConfig{
 		Enabled:       true,
-		StorageDir:    filepath.Join(homeDir, ".attest", "checkpoints"),
+		StorageDir:    storageDir,
 		Interactive:   true,
 		AutoRollback:  true,
 		ConfirmDanger: true,
 	}
+
+	// Try to load existing config
+	configPath := filepath.Join(storageDir, "config.json")
+	if data, err := os.ReadFile(configPath); err == nil {
+		if err := json.Unmarshal(data, config); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to parse guardrails config: %v\n", err)
+		}
+	}
+
+	return config
 }
 
 // NewGuardrailsManager creates a new guardrails manager with default configuration
@@ -154,15 +174,11 @@ func NewGuardrailsManagerWithConfig(config *GuardrailsConfig) *GuardrailsManager
 	}
 }
 
-// IsEnabled returns whether guardrails are enabled
-func (m *GuardrailsManager) IsEnabled() bool {
-	return m.config.Enabled
-}
-
 // SetEnabled enables or disables guardrails
-func (m *GuardrailsManager) SetEnabled(enabled bool) {
+func (m *GuardrailsManager) SetEnabled(enabled bool) error {
 	m.config.Enabled = enabled
 	m.interceptor.SetEnabled(enabled)
+	return m.SaveConfiguration()
 }
 
 // GetPolicies returns all registered policies
