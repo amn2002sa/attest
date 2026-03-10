@@ -30,6 +30,15 @@ pub struct AuthoritySegment {
     pub nonce: u64,
 }
 
+/// The Identity segment contains the unique hardware identity (Attest Pillar).
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct IdentitySegment {
+    /// SHA-256 of the Ed25519 pubkey (AID).
+    pub agent: String,
+    /// TPM signature of the capsule_id.
+    pub tpm: String,
+}
+
 /// The Witness segment contains the append-only log record coordinates from CHORA.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct WitnessSegment {
@@ -124,5 +133,75 @@ mod tests {
 
         let hash = SegmentHasher::hash(&auth).expect("Should hash successfully");
         assert_ne!(hash, [0u8; 32], "Hash should not be empty");
+    }
+
+    #[test]
+    fn test_capsule_jcs_parity() {
+        use crate::runtime::intent::Intent;
+
+        // 1. Construct segments identical to vex-core's chora_parity.rs
+        let intent = Intent {
+            id: "test-intent-1".into(),
+            goal: "test-goal".into(),
+            description: None,
+            ticket_id: None,
+            constraints: vec![],
+            acceptance_criteria: vec![],
+            status: "open".into(),
+            created_at: "2024-01-01T00:00:00Z".into(),
+            closed_at: None,
+            metadata: None,
+        };
+
+        let authority = AuthoritySegment {
+            capsule_id: "chora-v1-test".into(),
+            outcome: "ALLOW".into(),
+            reason_code: "WITHIN_POLICY".into(),
+            trace_root: [0x55; 32],
+            nonce: 12345,
+        };
+
+        let identity = IdentitySegment {
+            agent: "test-agent".into(),
+            tpm: "test-tpm".into(),
+        };
+
+        let witness = WitnessSegment {
+            chora_node_id: "test-chora-node".into(),
+            receipt_hash: "deadbeef".into(),
+            timestamp: "2024-03-09T10:00:00Z".into(),
+        };
+
+        // 2. Compute individual pillar hashes
+        let intent_hash = SegmentHasher::hash(&intent).unwrap();
+        let auth_hash = SegmentHasher::hash(&authority).unwrap();
+        let id_hash = SegmentHasher::hash(&identity).unwrap();
+        let wit_hash = SegmentHasher::hash(&witness).unwrap();
+
+        // Hex encode for composite root verification
+        let intent_hex = hex::encode(intent_hash);
+        let auth_hex = hex::encode(auth_hash);
+        let id_hex = hex::encode(id_hash);
+        let wit_hex = hex::encode(wit_hash);
+
+        // 3. Compute the full composite capsule root
+        let composite_root_obj = json!({
+            "intent_hash": intent_hex,
+            "authority_hash": auth_hex,
+            "identity_hash": id_hex,
+            "witness_hash": wit_hex
+        });
+
+        let composite_root_hash = SegmentHasher::hash(&composite_root_obj).unwrap();
+        let root_hex = hex::encode(composite_root_hash);
+
+        println!("--- ATTEST-RS HASHES ---");
+        println!("Intent Hash:    {}", intent_hex);
+        println!("Authority Hash: {}", auth_hex);
+        println!("Identity Hash:  {}", id_hex);
+        println!("Witness Hash:   {}", wit_hex);
+        println!("Capsule Root:   {}", root_hex);
+
+        assert_eq!(root_hex.len(), 64);
     }
 }

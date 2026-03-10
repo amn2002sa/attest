@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/spf13/cobra"
 	"github.com/provnai/attest/pkg/storage"
+	"github.com/spf13/cobra"
 )
 
 var queryCmd = &cobra.Command{

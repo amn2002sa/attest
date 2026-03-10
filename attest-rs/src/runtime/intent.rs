@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -29,11 +28,11 @@ pub struct Intent {
         default
     )]
     pub acceptance_criteria: Vec<String>,
-    pub status: IntentStatus,
+    pub status: String,
     #[serde(rename = "createdAt")]
-    pub created_at: DateTime<Utc>,
+    pub created_at: String,
     #[serde(rename = "closedAt", skip_serializing_if = "Option::is_none")]
-    pub closed_at: Option<DateTime<Utc>>,
+    pub closed_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<IntentMeta>,
 }
@@ -66,8 +65,8 @@ impl Intent {
             ticket_id: None,
             constraints: Vec::new(),
             acceptance_criteria: Vec::new(),
-            status: IntentStatus::Open,
-            created_at: Utc::now(),
+            status: "open".to_string(),
+            created_at: chrono::Utc::now().to_rfc3339(),
             closed_at: None,
             metadata: None,
         }

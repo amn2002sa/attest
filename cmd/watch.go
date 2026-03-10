@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/provnai/attest/pkg/instrument"
 	"github.com/provnai/attest/pkg/storage"
+	"github.com/spf13/cobra"
 )
 
 var watchCmd = &cobra.Command{

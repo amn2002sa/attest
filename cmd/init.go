@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/spf13/cobra"
 	"github.com/provnai/attest/internal/setup"
+	"github.com/spf13/cobra"
 )
 
 var (

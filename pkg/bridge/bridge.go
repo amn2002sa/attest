@@ -1,5 +1,6 @@
 // +build cgo
 //go:build cgo
+// +build cgo
 
 package bridge
 
@@ -70,7 +71,7 @@ func Seal(data []byte) ([]byte, error) {
 	if ptr == nil {
 		return nil, fmt.Errorf("TPM seal failed in Rust core")
 	}
-	
+
 	result := C.GoBytes(unsafe.Pointer(ptr), C.int(outLen))
 	C.attest_free_buffer(ptr, outLen)
 	return result, nil
@@ -87,7 +88,7 @@ func Unseal(blob []byte) ([]byte, error) {
 	if ptr == nil {
 		return nil, fmt.Errorf("TPM unseal failed in Rust core")
 	}
-	
+
 	result := C.GoBytes(unsafe.Pointer(ptr), C.int(outLen))
 	C.attest_free_buffer(ptr, outLen)
 	return result, nil

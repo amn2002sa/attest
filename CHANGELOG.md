@@ -3,6 +3,13 @@
 All notable changes to Attest are documented in this file.
 The project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.3.1] - 2026-03-10
+
+### Added
+
+- **🧬 Cross-Implementation Verification**: Confirmed 100% JCS hashing parity with the VEX Protocol reference.
+- **🛡️ Persistent Guardrails**: Refactored the execution engine to support persistent, reloadable YAML safety policies.
+
 ## [v0.3.0] - 2026-03-08
 
 ### Added
@@ -35,15 +42,15 @@ The project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [v0.1.0] - 2026-03-05
 
 ### ⚓ The Silicon-Rooted Release
-This release bridges the gap between cognitive AI and physical machine security, providing hardware-sealed identity and mathematical finality via ZK-STARKs.
+This release implements hardware-rooted identity and verifiable audit trails.
 
 ### Added
 - **Hardware-Sealed Identity**: 
-  - Native TPM 2.0 (Linux) via `tss-esapi` and Microsoft CNG (Windows) support for **Industrial Strength** key protection.
-  - **No More "Hot Keys"**: Keys are sealed to the Secure Element and never exposed in plaintext.
-  - **Deterministic Attribution**: Agent IDs (`aid:...`) are cryptographically derived from hardware, ensuring 1:1 accountability.
-- **ZK-STARK Audit Trails (Mathematical Finality)**:
-  - **Plonky3 Engine**: High-performance proofs using Goldilocks fields and Two-Adic FRI.
+  - Native TPM 2.0 (Linux) and CNG (Windows) support for hardware-based key protection.
+  - Keys are sealed to the hardware and are not exposed in plaintext.
+  - Deterministic Attribution: Agent IDs (`aid:...`) are derived from hardware identity.
+- **ZK-STARK Audit Trails**:
+  - High-performance proofs using Goldilocks fields and Two-Adic FRI.
   - **Audit-as-Code**: Generate proofs verifiable by third parties without data exposure.
 - **Quantum Undo System**:
   - **Reversible State**: Automatic filesystem snapshots before every `attest exec`.

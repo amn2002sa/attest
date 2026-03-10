@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/provnai/attest/pkg/attestation"
 	"github.com/provnai/attest/pkg/identity"
 	"github.com/provnai/attest/pkg/storage"
+	"github.com/spf13/cobra"
 )
 
 var verifyCmd = &cobra.Command{
@@ -28,7 +28,7 @@ var verifyCheckCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		attestationID := args[0]
-		
+
 		db, err := storage.NewDB(cfg.DBPath)
 		if err != nil {
 			return fmt.Errorf("failed to open database: %w", err)
@@ -56,8 +56,6 @@ var verifyCheckCmd = &cobra.Command{
 			return fmt.Errorf("invalid agent public key: %w", err)
 		}
 
-
-
 		valid := attest.Verify(pubKey)
 
 		// 4. Output
@@ -66,7 +64,7 @@ var verifyCheckCmd = &cobra.Command{
 		fmt.Printf("Action:      %s %s\n", attest.Action.Type, attest.Action.Target)
 		fmt.Printf("Timestamp:   %s\n", attest.Timestamp.Format(time.RFC3339))
 		fmt.Println()
-		
+
 		if valid {
 			fmt.Printf("✅ VERIFIED VALID\n")
 			fmt.Printf("Signature is cryptographically valid and linked to agent %s.\n", agent.ID)

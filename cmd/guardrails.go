@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/provnai/attest/pkg/guardrails"
+	"github.com/provnai/attest/pkg/guardrails/policies"
 )
 
 var guardrailsCmd = &cobra.Command{
@@ -119,11 +120,28 @@ Example policy.yaml:
 			return fmt.Errorf("policy file not found: %s", configPath)
 		}
 
-		yellow := color.New(color.FgYellow).SprintFunc()
-		green := color.New(color.FgGreen).SprintFunc()
+		// Task 7: Load and register the custom policy
+		manager := guardrails.GetGlobalManager()
 
-		fmt.Printf("%s Custom policy loaded from %s\n", yellow("⚠"), configPath)
-		fmt.Printf("%s Policy configuration (TODO: implement custom policy loading)\n", green("✓"))
+		yamlBytes, err := os.ReadFile(configPath)
+		if err != nil {
+			return fmt.Errorf("failed to read policy file: %w", err)
+		}
+
+		customPolicy, err := policies.LoadCustomPolicy(configPath)
+		if err != nil {
+			return fmt.Errorf("failed to load custom policy: %w", err)
+		}
+
+		manager.AddPolicy(customPolicy)
+
+		// Persist for future sessions
+		if err := manager.SavePolicy(customPolicy.ID(), yamlBytes); err != nil {
+			fmt.Printf("Warning: failed to persist policy to disk: %v\n", err)
+		}
+
+		green := color.New(color.FgGreen).SprintFunc()
+		fmt.Printf("%s Custom policy '%s' (%s) loaded and enabled\n", green("✓"), customPolicy.Name(), customPolicy.ID())
 
 		return nil
 	},

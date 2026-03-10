@@ -1,7 +1,6 @@
 package integrations
 
 import (
-
 	"os"
 	"path/filepath"
 )

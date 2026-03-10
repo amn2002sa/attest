@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/fatih/color"
-	"github.com/spf13/cobra"
 	"github.com/provnai/attest/internal/db"
 	"github.com/provnai/attest/pkg/cost"
+	"github.com/spf13/cobra"
 )
 
 var (

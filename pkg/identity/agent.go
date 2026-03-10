@@ -23,14 +23,14 @@ const (
 
 // Agent represents an agent identity document (AID)
 type Agent struct {
-	ID        string     `json:"id"`
-	Name      string     `json:"name"`
-	Type      AgentType  `json:"type"`
-	PublicKey string     `json:"publicKey"`
-	CreatedAt time.Time  `json:"createdAt"`
-	RevokedAt *time.Time `json:"revokedAt,omitempty"`
-	Metadata  AgentMeta  `json:"metadata,omitempty"`
-	PrivateKeyEncrypted string `json:"-"` // Internal use only
+	ID                  string     `json:"id"`
+	Name                string     `json:"name"`
+	Type                AgentType  `json:"type"`
+	PublicKey           string     `json:"publicKey"`
+	CreatedAt           time.Time  `json:"createdAt"`
+	RevokedAt           *time.Time `json:"revokedAt,omitempty"`
+	Metadata            AgentMeta  `json:"metadata,omitempty"`
+	PrivateKeyEncrypted string     `json:"-"` // Internal use only
 }
 
 // AgentMeta contains additional metadata about an agent
@@ -191,7 +191,7 @@ func (s *AgentStore) ListAll(includeRevoked bool) ([]*Agent, error) {
 		if err := rows.Scan(&id, &name, &agentType, &pubKey, &createdAt, &revokedAt, &metadata); err != nil {
 			return nil, err
 		}
-		
+
 		var meta AgentMeta
 		if err := json.Unmarshal([]byte(metadata), &meta); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
@@ -206,7 +206,7 @@ func (s *AgentStore) ListAll(includeRevoked bool) ([]*Agent, error) {
 			CreatedAt: parsedTime,
 			Metadata:  meta,
 		}
-		
+
 		if revokedAt.Valid && revokedAt.String != "" {
 			t, _ := time.Parse(time.RFC3339, revokedAt.String)
 			agent.RevokedAt = &t

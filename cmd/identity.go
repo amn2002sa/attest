@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
 	"github.com/provnai/attest/pkg/bridge"
+	"github.com/spf13/cobra"
 )
 
 var identityCmd = &cobra.Command{

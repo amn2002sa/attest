@@ -1,8 +1,8 @@
 package attestation
 
 import (
-	"crypto/sha256"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -137,7 +137,7 @@ func (a *Attestation) Verify(agentPubKey []byte) bool {
 		return false
 	}
 	sigHex := a.Signature[4:]
-	
+
 	// Decode hex signature
 	signature, err := hex.DecodeString(sigHex)
 	if err != nil {
@@ -192,9 +192,30 @@ type AttestationStore struct {
 	db *sql.DB
 }
 
-// NewAttestationStore creates a new attestation store
+// NewAttestationStore creates a new attestation store backed by the given SQLite DB.
 func NewAttestationStore(db *sql.DB) *AttestationStore {
 	return &AttestationStore{db: db}
+}
+
+// Migrate creates the attestations table if it doesn't exist.
+func (s *AttestationStore) Migrate() error {
+	_, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS attestations (
+			id            TEXT PRIMARY KEY,
+			agent_id      TEXT NOT NULL,
+			intent_id     TEXT,
+			action_type   TEXT NOT NULL,
+			action_target TEXT NOT NULL,
+			action_input  TEXT,
+			signature     TEXT NOT NULL,
+			timestamp     DATETIME NOT NULL,
+			metadata      TEXT
+		);
+		CREATE INDEX IF NOT EXISTS idx_att_agent  ON attestations(agent_id);
+		CREATE INDEX IF NOT EXISTS idx_att_intent ON attestations(intent_id);
+		CREATE INDEX IF NOT EXISTS idx_att_ts     ON attestations(timestamp);
+	`)
+	return err
 }
 
 // Save stores an attestation
@@ -218,7 +239,7 @@ func (s *AttestationStore) Save(attest *Attestation) error {
 // Get retrieves an attestation by ID
 func (s *AttestationStore) Get(id string) (*Attestation, error) {
 	var agentID, intentID, actionType, actionTarget, actionInput, signature, timestamp, metadata string
-	
+
 	err := s.db.QueryRow(
 		`SELECT agent_id, intent_id, action_type, action_target, action_input, signature, timestamp, metadata FROM attestations WHERE id = ?`,
 		id,
@@ -257,10 +278,64 @@ func (s *AttestationStore) Get(id string) (*Attestation, error) {
 	return attest, nil
 }
 
-// List returns attestations with optional filtering
+// List returns attestations with optional agentID and intentID filters.
+// Pass "" to skip a filter. limit=0 defaults to 100.
 func (s *AttestationStore) List(agentID, intentID string, limit int) ([]*Attestation, error) {
-	// TODO: Implement database list
-	return nil, nil
+	if limit <= 0 {
+		limit = 100
+	}
+
+	query := `SELECT id, agent_id, intent_id, action_type, action_target, action_input,
+		             signature, timestamp, metadata
+		        FROM attestations WHERE 1=1`
+	args := []interface{}{}
+
+	if agentID != "" {
+		query += " AND agent_id = ?"
+		args = append(args, agentID)
+	}
+	if intentID != "" {
+		query += " AND intent_id = ?"
+		args = append(args, intentID)
+	}
+	query += " ORDER BY timestamp DESC LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list attestations: %w", err)
+	}
+	defer rows.Close()
+
+	var results []*Attestation
+	for rows.Next() {
+		var (
+			aID, agID, iID, aType, aTarget, aInput, sig, ts string
+			metadataStr                                     string
+		)
+		if err := rows.Scan(&aID, &agID, &iID, &aType, &aTarget, &aInput, &sig, &ts, &metadataStr); err != nil {
+			return nil, err
+		}
+		var meta AttestationMeta
+		if metadataStr != "" {
+			_ = json.Unmarshal([]byte(metadataStr), &meta)
+		}
+		parsedTime, _ := time.Parse(time.RFC3339, ts)
+		results = append(results, &Attestation{
+			ID:       aID,
+			AgentID:  agID,
+			IntentID: iID,
+			Action: ActionRecord{
+				Type:   ActionType(aType),
+				Target: aTarget,
+				Input:  aInput,
+			},
+			Timestamp: parsedTime,
+			Signature: sig,
+			Metadata:  meta,
+		})
+	}
+	return results, rows.Err()
 }
 
 // AttestationInfo represents attestation data for display

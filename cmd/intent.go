@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/spf13/cobra"
 	"github.com/provnai/attest/pkg/intent"
 	"github.com/provnai/attest/pkg/storage"
+	"github.com/spf13/cobra"
 )
 
 var (

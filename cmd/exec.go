@@ -1,17 +1,17 @@
 package cmd
 
 import (
-	"crypto/sha256"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/provnai/attest/pkg/exec"
-	"github.com/provnai/attest/pkg/policy"
+	"github.com/provnai/attest/pkg/guardrails"
 	"github.com/provnai/attest/pkg/storage"
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -61,12 +61,7 @@ for file modifications when --reversible is specified.`,
   attest exec run --agent aid:1234 --intent int:abcd --reversible "python script.py"`,
 	Args: cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		command := strings.Join(args, " ")
-		if command == "" {
-			fmt.Println("Error: command is required")
-			os.Exit(1)
-		}
-		if err := runExecRun(command); err != nil {
+		if err := runExecRun(args); err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -110,105 +105,41 @@ var execHistoryCmd = &cobra.Command{
 	},
 }
 
-func runExecRun(command string) error {
-	workingDir, err := os.Getwd()
-	if err != nil {
-		workingDir = "."
-	}
+func runExecRun(args []string) error {
+	manager := guardrails.GetGlobalManager()
 
-	backupType := exec.BackupTypeNone
-	if execReversible {
-		switch execBackupType {
-		case "file":
-			backupType = exec.BackupTypeFile
-		case "dir":
-			backupType = exec.BackupTypeDir
-		case "none":
-			backupType = exec.BackupTypeNone
-		default:
-			backupType = exec.BackupTypeFile
+	// Prepare the command and its arguments
+	var command string
+	var cmdArgs []string
+	if len(args) > 0 {
+		command = args[0]
+		if len(args) > 1 {
+			cmdArgs = args[1:]
 		}
 	}
 
-	executor, err := exec.NewExecutor(cfg.BackupDir)
-	if err != nil {
-		return fmt.Errorf("failed to create executor: %w", err)
-	}
+	fmt.Printf("Executing with Guardrails: %s %s\n", command, strings.Join(cmdArgs, " "))
 
-	// Initialize and set policy engine
-	policyEngine := policy.NewPolicyEngine()
-	// Add default policies (already added in NewPolicyEngine)
-	executor.SetPolicyEngine(policyEngine)
-
-	opts := exec.ExecuteOptions{
-		Command:    command,
-		WorkingDir: workingDir,
-		Reversible: execReversible,
-		BackupType: backupType,
-		IntentID:   execIntent,
-		AgentID:    execAgent,
-		DryRun:     execDryRun,
-	}
-
-	result := executor.Execute(opts)
-
-	if execDryRun {
-		fmt.Printf("[DRY RUN] Would execute: %s\n", command)
-		if execReversible {
-			fmt.Printf("[DRY RUN] Backup type: %s\n", backupType)
-		}
-		if execIntent != "" {
-			fmt.Printf("[DRY RUN] Linked to intent: %s\n", execIntent)
-		}
-		if !result.Success && result.Error != nil {
-			fmt.Printf("[DRY RUN] Error: %v\n", result.Error)
-		}
-		return nil
-	}
-
-	actionID := generateActionID(command)
-
-	if result.Success {
-		fmt.Printf("✓ Executed: %s\n", command)
-		fmt.Printf("  Action ID: %s\n", actionID)
-		if result.BackupPath != "" {
-			fmt.Printf("  Backup:    %s\n", result.BackupPath)
-		}
-		if execIntent != "" {
-			fmt.Printf("  Intent:    %s\n", execIntent)
-		}
-	} else {
-		fmt.Printf("✗ Failed: %s\n", command)
-		if result.Error != nil {
-			fmt.Printf("  Error: %v\n", result.Error)
-		}
-		if result.BackupPath != "" {
-			fmt.Printf("  Backup: %s (automatic restore attempted)\n", result.BackupPath)
-		}
-	}
-
-	db, err := storage.NewDB(cfg.DBPath)
+	ctx := context.Background()
+	result, err := manager.Execute(ctx, command, cmdArgs)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
 
-	status := exec.StatusExecuted
-	if !result.Success {
-		status = exec.StatusFailed
+	if result.Blocked {
+		fmt.Printf("✗ Blocked by Guardrails: %s\n", result.BlockedBy)
+		return nil
 	}
 
-	_, err = db.Exec(
-		`INSERT INTO reversible_actions (id, attestation_id, command, working_dir, backup_path, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		actionID, "", command, workingDir, result.BackupPath, status, time.Now().UTC().Format(time.RFC3339),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to save action: %w", err)
-	}
-
-	if execIntent != "" {
-		if _, err := db.Exec(`UPDATE reversible_actions SET attestation_id = ? WHERE id = ?`, execIntent, actionID); err != nil {
-			fmt.Printf("Warning: failed to link intent to action: %v\n", err)
+	if result.Success {
+		fmt.Printf("✓ Executed successfully\n")
+		if result.Checkpoint != nil {
+			fmt.Printf("  Checkpoint created: %s\n", result.Checkpoint.ID)
+		}
+	} else {
+		fmt.Printf("✗ Execution failed (Exit Code: %d)\n", result.ExitCode)
+		if result.Stderr != "" {
+			fmt.Printf("  Error: %s\n", result.Stderr)
 		}
 	}
 
@@ -333,12 +264,6 @@ func runExecHistory() error {
 	}
 
 	return nil
-}
-
-func generateActionID(command string) string {
-	data := fmt.Sprintf("exec:%s:%s", command, time.Now().UTC().Format(time.RFC3339))
-	hash := sha256.Sum256([]byte(data))
-	return fmt.Sprintf("exec:%x", hash[:8])
 }
 
 // containsDangerousPatterns and confirmDangerous are now handled by the guardrails package

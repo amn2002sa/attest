@@ -7,10 +7,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/provnai/attest/pkg/crypto"
 	"github.com/provnai/attest/pkg/identity"
 	"github.com/provnai/attest/pkg/storage"
+	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
 
@@ -252,7 +252,7 @@ func runAgentList() error {
 	// Ah, I see `agentListCmd` Example says `--all` but I don't see the flag variable `agentListAll` defined in `cmd/agent.go`.
 	// The original SQL was `ORDER BY created_at DESC`, without WHERE clause! So it listed ALL agents by default.
 	// I will usage `store.ListAll(true)` to match previous behavior of showing all.
-	
+
 	agents, err := store.ListAll(true)
 	if err != nil {
 		return err

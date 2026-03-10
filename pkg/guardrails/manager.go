@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/provnai/attest/pkg/guardrails/policies"
+	"github.com/provnai/attest/pkg/policy"
 )
 
 // PolicyRegistry holds all available policies
@@ -122,7 +123,7 @@ type GuardrailsConfig struct {
 func DefaultConfig() *GuardrailsConfig {
 	homeDir, _ := os.UserHomeDir()
 	storageDir := filepath.Join(homeDir, ".attest", "checkpoints")
-	
+
 	config := &GuardrailsConfig{
 		Enabled:       true,
 		StorageDir:    storageDir,
@@ -150,9 +151,13 @@ func NewGuardrailsManager() *GuardrailsManager {
 
 // NewGuardrailsManagerWithConfig creates a new guardrails manager with custom configuration
 func NewGuardrailsManagerWithConfig(config *GuardrailsConfig) *GuardrailsManager {
-	// Ensure storage directory exists
+	// Ensure storage and policies directories exist
 	if err := os.MkdirAll(config.StorageDir, 0755); err != nil {
 		fmt.Printf("Warning: failed to create storage directory: %v\n", err)
+	}
+	policiesDir := filepath.Join(filepath.Dir(config.StorageDir), "policies")
+	if err := os.MkdirAll(policiesDir, 0755); err != nil {
+		fmt.Printf("Warning: failed to create policies directory: %v\n", err)
 	}
 
 	// Create checkpoint manager
@@ -163,15 +168,41 @@ func NewGuardrailsManagerWithConfig(config *GuardrailsConfig) *GuardrailsManager
 
 	// Register all policies
 	registry := NewPolicyRegistry()
-	for _, policy := range registry.GetAll() {
-		interceptor.AddPolicy(policy)
+	for _, p := range registry.GetAll() {
+		interceptor.AddPolicy(p)
 	}
 
-	return &GuardrailsManager{
+	manager := &GuardrailsManager{
 		registry:    registry,
 		interceptor: interceptor,
 		config:      config,
 	}
+
+	// Load custom policies from disk
+	if err := manager.loadCustomPolicies(); err != nil {
+		fmt.Printf("Warning: failed to load custom policies: %v\n", err)
+	}
+
+	return manager
+}
+
+func (m *GuardrailsManager) loadCustomPolicies() error {
+	policiesDir := filepath.Join(filepath.Dir(m.config.StorageDir), "policies")
+	if _, err := os.Stat(policiesDir); os.IsNotExist(err) {
+		return nil // No custom policies yet
+	}
+
+	// Use the policy package's loader
+	rawPolicies, err := policy.LoadPoliciesFromDir(policiesDir)
+	if err != nil {
+		return err
+	}
+
+	for _, p := range rawPolicies {
+		m.AddPolicy(policies.NewCustomPolicy(p))
+	}
+
+	return nil
 }
 
 // SetEnabled enables or disables guardrails
@@ -194,6 +225,19 @@ func (m *GuardrailsManager) EnablePolicy(policyID string) error {
 // DisablePolicy disables a specific policy
 func (m *GuardrailsManager) DisablePolicy(policyID string) error {
 	return m.registry.Disable(policyID)
+}
+
+// AddPolicy adds a new policy to the manager and interceptor
+func (m *GuardrailsManager) AddPolicy(policy Policy) {
+	m.registry.Register(policy)
+	m.interceptor.AddPolicy(policy)
+}
+
+// SavePolicy saves a custom policy to disk
+func (m *GuardrailsManager) SavePolicy(policyID string, rawYAML []byte) error {
+	policiesDir := filepath.Join(filepath.Dir(m.config.StorageDir), "policies")
+	filename := fmt.Sprintf("%s.yaml", policyID)
+	return os.WriteFile(filepath.Join(policiesDir, filename), rawYAML, 0644)
 }
 
 // Execute runs a command with guardrail protection

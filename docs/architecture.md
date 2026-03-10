@@ -1,11 +1,11 @@
-# Architecture: The Glassbox Provenance Stack
+# Architecture: Verifiable Reasoning and Provenance
 
-The **Attest Protocol** acts as the cryptographic backbone for autonomous agent ecosystems like **VEX**. It provides two guarantees that traditional logging systems cannot:
+The **Attest Protocol** provides a cryptographic foundation for autonomous agent ecosystems like **VEX**. It offers specific guarantees regarding identity and state:
 
-1.  **Hardware-Rooted Identity**: Mathematical proof that an action originated from a specific physical chip, not just a software script.
-2.  **ZK-STARK Verification**: Mathematical proof that an agent's cognitive state transitioned according to a set of rules, without needing to leak the sensitive variables that caused the transition.
+1.  **Hardware-Rooted Identity**: Provides evidence that an action originated from a specific physical chip.
+2.  **ZK-STARK Verification**: Provides evidence that an agent's cognitive state transitioned according to defined rules, without exposing sensitive variables.
 
-When integrated together, `attest`, `vex-hardware`, and the `vex` execution runtimes create a **"Glassbox Provenance"** architecture.
+When integrated together, `attest`, `vex-hardware`, and the `vex` execution runtimes create a verifiable "Glassbox" architecture.
 
 ---
 

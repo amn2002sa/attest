@@ -1,7 +1,9 @@
 package exec
 
 import (
+	"context"
 	"crypto/sha256"
+	"database/sql"
 	"fmt"
 	"os"
 	"os/exec"
@@ -241,7 +243,7 @@ func (e *Executor) Execute(opts ExecuteOptions) *ExecuteResult {
 			AgentID:     opts.AgentID,
 			IntentID:    opts.IntentID,
 		}
-		
+
 		allowed, results := e.policyEngine.ShouldAllow(ctx)
 		if !allowed {
 			var violations []string
@@ -277,7 +279,7 @@ func (e *Executor) Execute(opts ExecuteOptions) *ExecuteResult {
 	if opts.Reversible {
 		var err error
 		actualBackupType := opts.BackupType
-		
+
 		// If working dir is a directory and type is file, upgrade to directory backup
 		if info, sErr := os.Stat(opts.WorkingDir); sErr == nil && info.IsDir() && actualBackupType == BackupTypeFile {
 			actualBackupType = BackupTypeDir
@@ -351,7 +353,7 @@ func (e *Executor) generateReverseCommand(command, backupPath string) string {
 	if backupPath == "" {
 		return ""
 	}
-	
+
 	if runtime.GOOS == "windows" {
 		return fmt.Sprintf("xcopy /E /Y %s .", backupPath)
 	}
@@ -400,30 +402,134 @@ func isSQLite(path string) bool {
 	return len(path) > 3 && path[len(path)-3:] == ".db"
 }
 
-// ActionStore stores reversible actions
+// ActionStore stores reversible actions using SQLite.
 type ActionStore struct {
-	// Database operations will be implemented here
+	db *sql.DB
 }
 
-// NewActionStore creates a new action store
-func NewActionStore() *ActionStore {
-	return &ActionStore{}
+// NewActionStore creates a new action store backed by SQLite.
+func NewActionStore(db *sql.DB) *ActionStore {
+	return &ActionStore{db: db}
 }
 
-// Save saves a reversible action
+// Migrate creates the actions table if it doesn't exist.
+func (s *ActionStore) Migrate(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS actions (
+			id              TEXT PRIMARY KEY,
+			attestation_id  TEXT NOT NULL,
+			command         TEXT NOT NULL,
+			working_dir     TEXT,
+			backup_path     TEXT,
+			reverse_command TEXT,
+			status          TEXT NOT NULL,
+			created_at      DATETIME NOT NULL,
+			rolled_back_at  DATETIME
+		);
+		CREATE INDEX IF NOT EXISTS idx_actions_attestation ON actions(attestation_id);
+		CREATE INDEX IF NOT EXISTS idx_actions_status      ON actions(status);
+	`)
+	return err
+}
+
+// Save saves a reversible action.
 func (s *ActionStore) Save(action *ReversibleAction) error {
-	// TODO: Implement database save
-	return nil
+	var rolledBackAt *string
+	if action.RolledBackAt != nil {
+		t := action.RolledBackAt.UTC().Format(time.RFC3339)
+		rolledBackAt = &t
+	}
+
+	_, err := s.db.Exec(`
+		INSERT INTO actions (id, attestation_id, command, working_dir, backup_path, reverse_command, status, created_at, rolled_back_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			status = excluded.status,
+			rolled_back_at = excluded.rolled_back_at
+	`,
+		action.ID,
+		action.AttestationID,
+		action.Command,
+		action.WorkingDir,
+		action.BackupPath,
+		action.ReverseCommand,
+		string(action.Status),
+		action.CreatedAt.UTC().Format(time.RFC3339),
+		rolledBackAt,
+	)
+	return err
 }
 
-// Get retrieves an action by ID
+// Get retrieves an action by ID.
 func (s *ActionStore) Get(id string) (*ReversibleAction, error) {
-	// TODO: Implement database get
-	return nil, nil
+	var (
+		a            ReversibleAction
+		createdAtStr string
+		rolledBackAt sql.NullString
+	)
+	err := s.db.QueryRow(`
+		SELECT id, attestation_id, command, working_dir, backup_path, reverse_command, status, created_at, rolled_back_at
+		FROM actions WHERE id = ?
+	`, id).Scan(&a.ID, &a.AttestationID, &a.Command, &a.WorkingDir, &a.BackupPath, &a.ReverseCommand, &a.Status, &createdAtStr, &rolledBackAt)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	a.CreatedAt, _ = time.Parse(time.RFC3339, createdAtStr)
+	if rolledBackAt.Valid {
+		t, _ := time.Parse(time.RFC3339, rolledBackAt.String)
+		a.RolledBackAt = &t
+	}
+
+	return &a, nil
 }
 
-// List returns actions with optional filtering
+// List returns actions with optional agentID (via attestation link) and status filtering.
 func (s *ActionStore) List(agentID, status string, limit int) ([]*ReversibleAction, error) {
-	// TODO: Implement database list
-	return nil, nil
+	if limit <= 0 {
+		limit = 50
+	}
+
+	// Note: agentID filter requires join with attestations if we wanted strict filtering,
+	// but for now we'll match by status or just list all if filters are empty.
+	query := `SELECT id, attestation_id, command, working_dir, backup_path, reverse_command, status, created_at, rolled_back_at
+	          FROM actions WHERE 1=1`
+	args := []interface{}{}
+
+	if status != "" {
+		query += " AND status = ?"
+		args = append(args, status)
+	}
+
+	query += " ORDER BY created_at DESC LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []*ReversibleAction
+	for rows.Next() {
+		var (
+			a            ReversibleAction
+			createdAtStr string
+			rolledBackAt sql.NullString
+		)
+		if err := rows.Scan(&a.ID, &a.AttestationID, &a.Command, &a.WorkingDir, &a.BackupPath, &a.ReverseCommand, &a.Status, &createdAtStr, &rolledBackAt); err != nil {
+			return nil, err
+		}
+		a.CreatedAt, _ = time.Parse(time.RFC3339, createdAtStr)
+		if rolledBackAt.Valid {
+			t, _ := time.Parse(time.RFC3339, rolledBackAt.String)
+			a.RolledBackAt = &t
+		}
+		results = append(results, &a)
+	}
+	return results, nil
 }

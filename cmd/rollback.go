@@ -16,7 +16,6 @@ var rollbackCmd = &cobra.Command{
 	Long:  `Restore system state from a previously created checkpoint.`,
 }
 
-
 var lastSafe bool
 
 var rollbackToCheckpointCmd = &cobra.Command{
@@ -196,7 +195,6 @@ var rollbackStatusCmd = &cobra.Command{
 		return nil
 	},
 }
-
 
 func init() {
 	rollbackCmd.AddCommand(rollbackToCheckpointCmd)

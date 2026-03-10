@@ -15,6 +15,9 @@ pub struct TpmsAttest {
     pub extra_data: Vec<u8>,
     pub pcr_select: Vec<u8>,
     pub pcr_digest: Vec<u8>,
+    /// The raw bytes of the TPMS_ATTEST structure that the TPM signs.
+    /// Signature verification is performed over this buffer.
+    pub attested_bytes: Vec<u8>,
 }
 
 impl TpmsAttest {
@@ -81,6 +84,7 @@ impl TpmsAttest {
             extra_data,
             pcr_select,
             pcr_digest,
+            attested_bytes: data.to_vec(), // full TPMS_ATTEST blob — TPM signs this
         })
     }
 }

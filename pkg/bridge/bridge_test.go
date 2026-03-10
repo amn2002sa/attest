@@ -25,7 +25,7 @@ func TestBridgeIdentity(t *testing.T) {
 
 func TestBridgeTPM(t *testing.T) {
 	data := []byte("high-entropy-seed-data")
-	
+
 	sealed, err := Seal(data)
 	if err != nil {
 		t.Skipf("TPM Seal skipped (likely no hardware): %v", err)

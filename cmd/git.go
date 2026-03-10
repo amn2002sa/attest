@@ -11,8 +11,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-
-
 var (
 	hookInstallDir string
 	skipDryRun     bool

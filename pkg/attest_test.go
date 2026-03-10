@@ -5,8 +5,6 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"github.com/provnai/attest/pkg/attestation"
 	"github.com/provnai/attest/pkg/config"
 	"github.com/provnai/attest/pkg/crypto"
@@ -15,6 +13,8 @@ import (
 	"github.com/provnai/attest/pkg/intent"
 	"github.com/provnai/attest/pkg/policy"
 	"github.com/provnai/attest/pkg/storage"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConfigDefault(t *testing.T) {

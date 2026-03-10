@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
 	"github.com/provnai/attest/pkg/policy"
+	"github.com/spf13/cobra"
 )
 
 var (

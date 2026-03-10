@@ -272,7 +272,7 @@ func (m *CheckpointManager) captureFileStates(ctx context.Context, op *Operation
 
 func (m *CheckpointManager) captureDBStates(ctx context.Context, op *Operation) ([]DBState, error) {
 	// Database state capture planned for v1.1
-	return []DBState{}, nil 
+	return []DBState{}, nil
 }
 
 func (m *CheckpointManager) saveCheckpoint(checkpoint *Checkpoint, checkpointDir string) error {

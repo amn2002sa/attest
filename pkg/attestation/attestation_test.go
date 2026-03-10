@@ -1,13 +1,12 @@
 package attestation
 
 import (
-
 	"fmt"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/provnai/attest/pkg/crypto"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestAttestationSigningAndVerification(t *testing.T) {
@@ -37,16 +36,14 @@ func TestAttestationSigningAndVerification(t *testing.T) {
 		attest.Action.Target,
 		attest.Timestamp.Format(time.RFC3339),
 	)
-	
+
 	sig, err := keys.Sign([]byte(signData))
 	assert.NoError(t, err)
 	assert.NotEmpty(t, sig)
-	
+
 	// Mimic the CreateAttestation logic which stores it
 	// But wait, CreateAttestation is a function in attestation.go that does the signing internally?
 	// Let's check the code I viewed earlier.
 	// Yes, `CreateAttestation` calls `signAttestation`.
 	// Let's test the public API `CreateAttestation`.
 }
-
-

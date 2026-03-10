@@ -1,8 +1,8 @@
 # Attest Protocol
 
-**The hardware-rooted identity and zero-trust provenance protocol for AI agents.**
+**A hardware-rooted identity and provenance protocol for AI agents.**
 
-Hardware identity • ZK-STARK audit trails • Glassbox Provenance • Production-ready FFI — all in Rust.
+Hardware identity • ZK-STARK audit trails • Glassbox Provenance • Production-oriented FFI — all in Rust.
 
 [![GitHub Stars](https://img.shields.io/github/stars/provnai/attest?style=flat-square&color=gold)](https://github.com/provnai/attest/stargazers)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat-square)](https://opensource.org/licenses/Apache-2.0)
@@ -30,18 +30,20 @@ Hardware identity • ZK-STARK audit trails • Glassbox Provenance • Producti
 | **Spoofed Identity** | Keys are sealed to the silicon (TPM/CNG). The `aid:<sha256-prefix>` ID is deterministically derived from the hardware-bound public key. |
 | **Silent Failures** | ZK-STARK proofs (Plonky3 + Goldilocks) mathematically compress entire audit trails into verifiable artifacts. |
 | **Unauditable Logic** | Every declared `intent` is cryptographically linked to every `exec` that follows it, forming a tamper-evident chain. |
-| **Dangerous Actions** | The policy engine evaluates agent actions in real-time, blocking harmful commands before they execute. |
-| **Irreversible Mistakes** | The `quantum` system creates verifiable state checkpoints so execution can be safely rewound. |
+| **Dangerous Actions** | The policy engine evaluates agent actions in real-time, providing a layer of protection against harmful commands. |
+| **Irreversible Mistakes** | The `quantum` system provides state checkpoints so execution can be safely rewound. |
 
 ---
 
-## ✨ What's New in v0.1.0
+## ✨ Recent Improvements (v0.3.1)
 
-*   🧬 **Hardened ZK-STARK Prover**: Full Plonky3 integration using Goldilocks fields and Two-Adic FRI. Hardened against public input forgery and serialization corruption.
-*   🛡️ **VEX-Hardware Isolation**: Independent `vex-hardware` crate for high-assurance TEE key management with strict `Zeroize` memory hygiene.
-*   🚦 **VEX Cognitive Binding**: Native `with_identity()` support for the VEX Orchestrator, enabling hardware-anchored evolutionary mutation trails.
-*   📦 **CGO-Free Storage**: Migrated to `modernc.org/sqlite` for 100% portable, zero-warning cross-compilation on all platforms.
-*   ⚛️ **Quantum Undo System**: Time-travel checkpointing with `diff`, `timeline`, `undo`, and `branch` support.
+*   **JCS Parity Verification**: Confirmed 100% hashing parity with the VEX Protocol reference.
+*   **Persistent Safety Policies**: Integrated reloadable YAML-based guardrails for automated command interception.
+*   **ZK-STARK Integrity**: Full Plonky3 integration using Goldilocks fields and Two-Adic FRI.
+*   **Hardware Isolation**: The `vex-hardware` crate provides key management with memory hygiene.
+*   **Cognitive Binding**: Added `with_identity()` support for the VEX Orchestrator to enable hardware-anchored mutation trails.
+*   **Portable Storage**: Uses `modernc.org/sqlite` for cross-platform SQLite support without a C compiler.
+*   **Quantum System**: State checkpointing with support for diffing and reverting filesystem changes.
 
 ---
 
@@ -126,9 +128,7 @@ All environment variables use the `ATTEST_` prefix (set automatically via Viper)
 
 ---
 
-## 🧬 **Glassbox Provenance** (VEX Binding)
-
-The primary way to use Attest is by anchoring a VEX agent to a hardware-root identity. This creates a mathematically bulletproof audit trail for every cognitive cycle.
+The primary way to use Attest is by anchoring a VEX agent to a hardware-root identity. This creates a verifiable audit trail for cognitive cycles.
 
 ```rust
 use std::sync::Arc;

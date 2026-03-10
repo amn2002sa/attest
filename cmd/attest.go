@@ -8,11 +8,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/provnai/attest/pkg/attestation"
 	"github.com/provnai/attest/pkg/crypto"
 	"github.com/provnai/attest/pkg/identity"
 	"github.com/provnai/attest/pkg/storage"
+	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
 
@@ -196,9 +196,9 @@ func runAttestCreate() error {
 	}
 
 	agent = &identity.Agent{
-		ID:        attestAgentID,
-		Name:      name,
-		Type:      identity.AgentType(agentType),
+		ID:   attestAgentID,
+		Name: name,
+		Type: identity.AgentType(agentType),
 	}
 
 	action := attestation.ActionRecord{

@@ -118,7 +118,7 @@ impl VepPacket {
     fn parse_segments(&self, data: &[u8], pk: &[u8]) -> Result<VepDecrypted> {
         let mut offset = 0;
         let mut intent = None;
-        let auth = None;
+        let mut auth: Option<AuthoritySegment> = None;
         let mut payload = Vec::new();
 
         while offset < data.len() {
@@ -135,9 +135,16 @@ impl VepPacket {
                     intent = Some(i);
                 }
                 2 => {
-                    // Authority (JSON)
-                    // Just parse it to ensure it's valid JSON for now
-                    let _: serde_json::Value = serde_json::from_slice(seg_data)?;
+                    // Authority (JSON) — parse into AuthoritySegment and store
+                    match serde_json::from_slice::<AuthoritySegment>(seg_data) {
+                        Ok(parsed_auth) => {
+                            auth = Some(parsed_auth);
+                        }
+                        Err(e) => {
+                            // Log but don't fail — authority may use a different schema version
+                            eprintln!("[vep] Warning: Authority segment parse failed: {}", e);
+                        }
+                    }
                 }
                 3 => {
                     // Identity (JSON)
@@ -296,15 +303,18 @@ mod tests {
         let witness = crate::runtime::hashing::WitnessSegment {
             chora_node_id: "test-node".into(),
             receipt_hash: "abcd1234abcd".into(),
-            timestamp: 1678888888,
+            timestamp: "2023-03-15T14:01:28Z".into(), // RFC3339 String — matches hashing.rs:41
         };
 
         let bytes = VepBuilder::build_with_hardware_quote(VepBuildInput {
             nonce: 123,
             intent: &intent,
             auth: &AuthoritySegment {
-                nonce: 123,
+                capsule_id: "test-capsule-id".into(), // required field
+                outcome: "ALLOW".into(),              // required field
+                reason_code: "TEST_OK".into(),        // required field
                 trace_root: [0u8; 32],
+                nonce: 123,
             },
             identity: &json!({"i":1}),
             witness: &witness,

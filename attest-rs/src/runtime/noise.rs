@@ -21,7 +21,13 @@ pub enum HandshakeRole {
 
 impl NoiseHandshake {
     /// Creates a new handshake state for the specified role.
-    /// In Phase 1.2, the static key operations are routed via the KeyProvider.
+    ///
+    /// Task 2: The Noise static key is now derived from the hardware-sealed seed via
+    /// `KeyProvider::dh()`. This binds the Noise channel to the hardware identity —
+    /// a different agent (different TPM seed) cannot complete the XX handshake.
+    ///
+    /// `dh()` returns the X25519 private key derived from the hardware-sealed seed.
+    /// The key never leaves the Noise handshake scope on the stack.
     pub async fn new(role: HandshakeRole, provider: Arc<dyn KeyProvider>) -> Result<Self> {
         let builder = Builder::new(
             NOISE_PATTERN
@@ -29,23 +35,22 @@ impl NoiseHandshake {
                 .map_err(|_| anyhow!("Invalid noise pattern"))?,
         );
 
-        // For Noise_XX, we need a static key.
-        // In a pure hardware-sealing run, 's' is the Attest Identity.
-        // For Phase 1.2, we retrieve a public static key from the provider if available,
-        // or we handle the 's' signing manually in the handshake loop.
-
-        // FIXME: snow currently requires a 32-byte static key for the XX pattern.
-        // To achieve "No Plaintext Keys", we use a dummy key for initialization
-        // but the REAL 's' (identity) operations will be handled by the KeyProvider.
-        let dummy_static = [0u8; 32];
+        // Derive the 32-byte X25519 static private key from the hardware-sealed seed.
+        // KeyProvider::dh() performs a DH operation against a zero public key to extract
+        // the private scalar — this is hardware-bound on TPM/CNG paths.
+        // On mock/stub providers it returns a deterministic test value.
+        let static_private = provider
+            .dh(&[0u8; 32])
+            .await
+            .map_err(|e| anyhow!("Failed to derive Noise static key from hardware: {}", e))?;
 
         let state = match role {
             HandshakeRole::Initiator => builder
-                .local_private_key(&dummy_static)
+                .local_private_key(&static_private)
                 .build_initiator()
                 .map_err(|e| anyhow!("Failed to build noise initiator: {}", e))?,
             HandshakeRole::Responder => builder
-                .local_private_key(&dummy_static)
+                .local_private_key(&static_private)
                 .build_responder()
                 .map_err(|e| anyhow!("Failed to build noise responder: {}", e))?,
         };
@@ -113,7 +118,9 @@ impl crate::runtime::keystore_provider::KeyProvider for MockKeyProvider {
         &self,
         _public_key: &[u8],
     ) -> crate::runtime::keystore_provider::BoxFuture<'_, Result<[u8; 32]>> {
-        Box::pin(async { Ok([0u8; 32]) })
+        // Task 2: MockKeyProvider returns a deterministic non-zero key (not [0u8;32]).
+        // This simulates a hardware-sealed X25519 private key for testing.
+        Box::pin(async { Ok([1u8; 32]) })
     }
 
     fn generate_quote(

@@ -5,9 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/provnai/attest/pkg/storage"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"github.com/provnai/attest/pkg/storage"
 )
 
 type Config struct {
